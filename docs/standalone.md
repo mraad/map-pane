@@ -203,10 +203,6 @@ Without the mod, Claude uses the skill and the CLI, like Codex and Pi.
 
 ### Tested
 
-On 2026-11-17, Codex and Pi also ran the task from an unrelated folder with the installed plugin and package
-(local installs of this repository). Each ran the CLI from its install path, and wrote the screenshot to the working folder.
-
-
 On 2026-11-17, each agent ran the same task on a live map: geocode Austin, Texas, add `examples/cities.geojson`, save a screenshot.
 
 | Agent | Path | Result |
@@ -214,6 +210,8 @@ On 2026-11-17, each agent ran the same task on a live map: geocode Austin, Texas
 | Codex CLI 0.169.0 | skill + CLI, `workspace-write` with network access | Austin matched (score 100), 20 features with the population renderer, [screenshot](img/proof-codex.png) |
 | Pi 1.3.0 | skill + CLI | Same result, [screenshot](img/proof-pi.png) |
 | Claude Code (mod, `claude -p --plugin-dir ./mappane`) | `mcp__mappane__go_to`, `add_layer`, `screenshot` | Austin matched (score 100), layer added, [screenshot](img/proof-claude.png) |
+
+Codex and Pi also ran the task from an unrelated folder after an install (plugin and package), each with the CLI from its install path.
 
 ## 9. Several maps
 

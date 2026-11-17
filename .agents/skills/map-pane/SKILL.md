@@ -6,12 +6,10 @@ argument-hint: "open | close | extent | basemaps | basemap <id> | go_to location
 
 # Map pane
 
-`<root>` is the map-pane folder: three directories above this SKILL.md (a repository clone, a Codex plugin
-cache or a Pi package). Resolve it once to an absolute path and write every command below with it, for example
-`/Users/me/map-pane/mappane/bin/map-command extent`. Run the commands from the user's working folder:
-relative file arguments (`./f.geojson`, `./map.png`) resolve there.
+Run `scripts/map-command` and `scripts/map-pane` from this skill's folder (call them by that folder's absolute path).
+Run them from the user's working folder: relative file arguments (`./f.geojson`, `./map.png`) resolve there.
 In Claude Code with the `mappane` mod loaded, use the mod's `mcp__mappane__*` tools instead; the CLI drives the same map.
-Successful commands print JSON and exit 0; errors exit 1. `<root>/mappane/bin/map-command --help` prints the syntax.
+Successful commands print JSON and exit 0; errors exit 1. `scripts/map-command --help` prints the syntax.
 Requirements: shell access as the same user and on the same machine as the map bridge, and Node.js 24+.
 Opening a split also needs macOS, Ghostty and Chrome.
 
@@ -25,46 +23,46 @@ Opening a split also needs macOS, Ghostty and Chrome.
 
 ## Open and select the map
 
-1. Run `<root>/mappane/bin/map-command extent`. It returns the current view if a map is running.
-2. If it fails with `No running map found`, run `<root>/mappane/bin/map-pane --split`. The launcher returns before the map loads.
+1. Run `scripts/map-command extent`. It returns the current view if a map is running.
+2. If it fails with `No running map found`, run `scripts/map-pane --split`. The launcher returns before the map loads.
    If `MAP_PANE_SOCKET` is set and it fails with `ENOENT` or `ECONNREFUSED`, that map stopped.
    Tell the user, unset `MAP_PANE_SOCKET` and run `extent` again before you open a split.
    If another map answers, confirm with the user that it is the intended map before you change it.
 3. Retry `extent` for at most 60 seconds. Report startup errors; do not open repeated splits.
 
-Do not run `<root>/mappane/bin/map-pane` without `--split`: it takes over the current terminal in raw mode.
+Do not run `scripts/map-pane` without `--split`: it takes over the current terminal in raw mode.
 An extent has bounds and a spatial reference; the coordinates are not necessarily longitude/latitude.
 
-Start view, set on the launcher (for example `MAP_PANE_CENTER=51.5074,-0.1278 MAP_PANE_ZOOM=10 <root>/mappane/bin/map-pane --split`):
+Start view, set on the launcher (for example `MAP_PANE_CENTER=51.5074,-0.1278 MAP_PANE_ZOOM=10 scripts/map-pane --split`):
 `MAP_PANE_BASEMAP` (legacy id, default `osm`), `MAP_PANE_CENTER` (`latitude,longitude`),
 `MAP_PANE_ZOOM` (0–23, default 3, needs a center), `MAP_PANE_EXTENT` (`xmin,ymin,xmax,ymax` in
 longitude/latitude; overrides center and zoom). None set: the world on `osm`. A bad value stops the launcher.
 
 The CLI targets the newest map bridge of the current user. If several maps run, identify the intended one
 and set its socket, `<Node tmpdir>/map-pane-command-<uid>-<server-pid>.sock`, on every command:
-`MAP_PANE_SOCKET=/absolute/path.sock <root>/mappane/bin/map-command extent`. `<root>/mappane/bin/map-command --info` prints the
+`MAP_PANE_SOCKET=/absolute/path.sock scripts/map-command extent`. `scripts/map-command --info` prints the
 page URL of the targeted map. Every page of one bridge shows the same map.
 
 ## Commands
 
 | Request | Command |
 |---|---|
-| List basemaps (no running map needed) | `<root>/mappane/bin/map-command basemaps` |
-| Set a basemap | `<root>/mappane/bin/map-command basemap osm` |
-| Set a basemap style (after `login`) | `<root>/mappane/bin/map-command basemap arcgis/dark-gray` |
-| Sign in to an ArcGIS portal | `<root>/mappane/bin/map-command login [--portal-url URL] [--client-id ID] [--redirect-uri URI]` |
-| Read the current extent | `<root>/mappane/bin/map-command extent` |
-| Go to a country, state, city, ZIP code or address | `<root>/mappane/bin/map-command go_to location 'Austin, Texas'` |
-| Go to latitude, longitude, optional zoom | `<root>/mappane/bin/map-command go_to coordinate 30.2672 -97.7431 12` |
-| Load a map service | `<root>/mappane/bin/map-command map-service URL` |
-| Load a feature service | `<root>/mappane/bin/map-command feature-service URL` |
-| Load GeoJSON from a URL | `<root>/mappane/bin/map-command geojson URL` |
-| Load a GeoPackage, or one table | `<root>/mappane/bin/map-command geopackage URL ['table name']` |
-| Add GeoJSON (file, `-` for stdin, or inline) | `<root>/mappane/bin/map-command graphics ./f.geojson --title 'Name' [--renderer JSON] [--labels JSON]` |
-| Zoom to all layers, or one | `<root>/mappane/bin/map-command zoom [LAYER_ID]` |
-| Save a PNG of the map view | `<root>/mappane/bin/map-command screenshot ./map.png` |
-| Remove all layers, keep the basemap | `<root>/mappane/bin/map-command clear` |
-| Save a private web map item (after `login`) | `<root>/mappane/bin/map-command save-webmap 'Title'` |
+| List basemaps (no running map needed) | `scripts/map-command basemaps` |
+| Set a basemap | `scripts/map-command basemap osm` |
+| Set a basemap style (after `login`) | `scripts/map-command basemap arcgis/dark-gray` |
+| Sign in to an ArcGIS portal | `scripts/map-command login [--portal-url URL] [--client-id ID] [--redirect-uri URI]` |
+| Read the current extent | `scripts/map-command extent` |
+| Go to a country, state, city, ZIP code or address | `scripts/map-command go_to location 'Austin, Texas'` |
+| Go to latitude, longitude, optional zoom | `scripts/map-command go_to coordinate 30.2672 -97.7431 12` |
+| Load a map service | `scripts/map-command map-service URL` |
+| Load a feature service | `scripts/map-command feature-service URL` |
+| Load GeoJSON from a URL | `scripts/map-command geojson URL` |
+| Load a GeoPackage, or one table | `scripts/map-command geopackage URL ['table name']` |
+| Add GeoJSON (file, `-` for stdin, or inline) | `scripts/map-command graphics ./f.geojson --title 'Name' [--renderer JSON] [--labels JSON]` |
+| Zoom to all layers, or one | `scripts/map-command zoom [LAYER_ID]` |
+| Save a PNG of the map view | `scripts/map-command screenshot ./map.png` |
+| Remove all layers, keep the basemap | `scripts/map-command clear` |
+| Save a private web map item (after `login`) | `scripts/map-command save-webmap 'Title'` |
 
 - Quote URLs, paths and place names. URLs must be HTTP(S). A FeatureServer root loads all its layers; a numbered URL loads one.
 - Basemaps: `legacy` ids work without sign-in. `styles` ids (`arcgis/*`, `osm/*`, `open/*`) need `login`,
@@ -75,11 +73,11 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 - `--renderer` and `--labels` take a file or inline JSON in SDK autocast form, for example
   `{"type":"class-breaks","field":"zscore","classBreakInfos":[{"minValue":-9,"maxValue":0,"symbol":{"type":"simple-marker","color":"#2c7bb6"}}]}`.
   To color by a value, compute it as a GeoJSON property first. Field names follow the
-  safe field-name rules (`<root>/docs/standalone.md`, "Safe field names") (reserved names, collisions).
+  safe field-name rules (reserved names, collisions; "Safe field names" in `../../../docs/standalone.md`).
 - Labels example: `--labels '{"labelExpressionInfo":{"expression":"$feature.name"}}'`.
 - Give every `graphics` layer a `--title`; it is the legend heading. Only `graphics` accepts `--title`. Run `zoom` after adding data:
   adding data keeps the current extent, so new data can be off screen.
-- Pass generated JSON through stdin or a quoted heredoc (`<root>/mappane/bin/map-command graphics - <<'EOF'`).
+- Pass generated JSON through stdin or a quoted heredoc (`scripts/map-command graphics - <<'EOF'`).
   Do not interpolate untrusted JSON into shell text.
 
 ## Results and retries
@@ -115,7 +113,7 @@ page URL of the targeted map. Every page of one bridge shows the same map.
   map execution 15 s (adding data, `graphics`, `save-webmap` 60 s; `zoom`, `screenshot` 30 s); Chrome startup 15 s.
 - Services need CORS and valid authentication. `osm` needs no credentials.
 
-More: `<root>/docs/standalone.md` (guide), `<root>/docs/architecture.md`.
+More: `../../../docs/standalone.md` (guide), `../../../docs/architecture.md`.
 
 ## Close the map
 
