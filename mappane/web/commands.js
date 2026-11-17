@@ -1,6 +1,6 @@
 export const HELP = `extent
 clear
-zoom [layer-id]
+zoom [layer-id | title]
 remove <layer-id | title>
 reorder <layer-id | title> <top | bottom | index>
 update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false]
@@ -106,7 +106,7 @@ export function validateGoTo(input) {
 export function parseCommand(text) {
   const [, command, value = ""] = text.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/) ?? [];
   if (["extent", "clear", "basemap", "login"].includes(command) && !value) return { command };
-  if (command === "zoom" && !/\s/.test(value)) return value ? { command, value } : { command };
+  if (command === "zoom") return value.trim() ? { command, value: value.trim() } : { command };
   if (command === "go_to") {
     const [, mode, target = ""] = value.match(/^(?:--)?(location|coordinate)(?:\s+([\s\S]+))?$/) ?? [];
     if (mode === "location") return validateGoTo({ command, mode, location: target.trim() });
