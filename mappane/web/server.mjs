@@ -35,7 +35,10 @@ let START
 try {
   START = startView(process.env)
 } catch (err) {
-  process.stdout.write(`BRIDGE down ${err.message}\n`, () => process.exit(1))
+  process.stdout.write(`BRIDGE down ${err.message}\n`, () => {
+    if (!HOME) rmSync(DATA, { recursive: true, force: true })
+    process.exit(1)
+  })
 }
 // A large local file or a slow service can take a while to load; the rest is quick.
 const TIMEOUT_MS = { add_layer: 60000, graphics: 60000, save_webmap: 60000, zoom: 30000, screenshot: 30000 }
@@ -114,6 +117,8 @@ function viewerDown(reason) {
 }
 
 function startPaneViewer(size) {
+  // Failures long ago no longer count: a pane that gave up gets 3 tries again.
+  if (Date.now() - lastFailure > FAILURE_WINDOW_MS) viewerFailures = 0
   if (viewerFailures >= MAX_VIEWER_FAILURES) return
   const mine = startViewer({
     url: `http://${HOST}/?embedded=1`,
@@ -190,6 +195,8 @@ let HOST = `127.0.0.1:${PORT}`
 // only its owner can connect (mode 0600).
 const TOKEN = process.env.MAP_PANE_TOKEN
 const SOCKET = commandSocket(process.pid)
+// Advertised (SOCKET line, /api/info) only once the socket listens: the CLI has no other way in.
+let socketReady = false
 const CONTROL = new Set(['/cmd', '/input', '/clear'])
 
 // Inline GeoJSON becomes a file in the data folder, so the log stays small and holds a path like any other.
@@ -237,7 +244,7 @@ const handler = async (req, res) => {
     }
     if (req.method === 'GET' && req.url === '/api/start') return json(res, 200, START)
     // bin/map-pane asks a running bridge where its page is.
-    if (req.method === 'GET' && req.url === '/api/info') return json(res, 200, { url: `http://${HOST}/`, pid: process.pid, socket: SOCKET })
+    if (req.method === 'GET' && req.url === '/api/info') return json(res, 200, { url: `http://${HOST}/`, pid: process.pid, socket: socketReady ? SOCKET : null })
     if (req.method === 'GET' && req.url === '/events') {
       res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -272,11 +279,11 @@ const handler = async (req, res) => {
         const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1
         if (start > end) return res.writeHead(416, { 'content-range': `bytes */${size}` }).end()
         res.writeHead(206, { 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1, 'accept-ranges': 'bytes' })
-        return createReadStream(path, { start, end }).pipe(res)
+        return createReadStream(path, { start, end }).on('error', () => res.destroy()).pipe(res)
       }
       res.writeHead(200, { 'content-length': size, 'accept-ranges': 'bytes' })
       if (req.method === 'HEAD') return res.end()
-      return createReadStream(path).pipe(res)
+      return createReadStream(path).on('error', () => res.destroy()).pipe(res)
     }
     if (req.method === 'GET' && req.url === '/state') return json(res, 200, snapshot())
     if (req.method === 'POST' && req.url === '/state') {
@@ -369,7 +376,14 @@ const handler = async (req, res) => {
           else if (firstError && failures >= Math.min(expected, tabs.size)) settle(firstError)
         })
         const timer = setTimeout(
-          () => settle(firstError ?? { ok: false, timedOut: true, error: `the map did not answer in ${timeout} ms; it may still finish, so call map_state before retrying` }),
+          // Timed out: a page may still finish it, so it stays in the log even when another page failed.
+          () => settle({
+            ok: false,
+            timedOut: true,
+            error: firstError
+              ? `${firstError.error}; another map page did not answer in ${timeout} ms and may still finish it, so call map_state before retrying`
+              : `the map did not answer in ${timeout} ms; it may still finish, so call map_state before retrying`,
+          }),
           timeout,
         )
         const message = toPage(entry, false)
@@ -387,7 +401,7 @@ const handler = async (req, res) => {
         writeFileSync(path, Buffer.from(result.dataUrl.split(',')[1] ?? '', 'base64'))
         result = { path, width: result.width, height: result.height }
       }
-      return json(res, ack.ok ? 200 : 422, { ok: ack.ok, error: ack.error, result, state: snapshot() })
+      return json(res, ack.ok ? 200 : 422, { ok: ack.ok, error: ack.error, ...(ack.timedOut ? { timedOut: true } : {}), result, state: snapshot() })
     }
     json(res, 404, { ok: false, error: 'not found' })
   } catch (err) {
@@ -398,8 +412,17 @@ const server = createServer(handler)
 
 // The CLI's door: same handler, owner-only socket, removed on exit.
 const commands = createServer(handler)
-commands.listen(SOCKET, () => chmodSync(SOCKET, 0o600))
-process.on('exit', () => rmSync(SOCKET, { force: true }))
+commands.on('error', err => console.error(`command socket: ${err.message}`))
+// Listens after the TCP port, so `bridge:` stays the first stdout line (the launcher and tests read it).
+function listenSocket() {
+  rmSync(SOCKET, { force: true }) // left by a killed bridge with the same pid
+  commands.listen(SOCKET, () => {
+    chmodSync(SOCKET, 0o600)
+    socketReady = true
+    console.log(`SOCKET ${SOCKET}`)
+  })
+  process.on('exit', () => rmSync(SOCKET, { force: true }))
+}
 
 // A mod reload starts the new bridge before the old one has let go of the port: retry.
 let tries = 0
@@ -415,8 +438,8 @@ if (START) server.listen(PORT, '127.0.0.1', () => {
   HOST = `127.0.0.1:${server.address().port}`
   removeOldSessions()
   console.log(`bridge: http://${HOST}/`)
-  console.log(`SOCKET ${SOCKET}`)
   publish()
+  listenSocket()
 })
 // A closed pane stops posting: free Chrome's 1-2 GB. Reopening the pane posts its size and starts it again.
 setInterval(

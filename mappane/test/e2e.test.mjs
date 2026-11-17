@@ -86,12 +86,15 @@ test("a terminal wheel step zooms the map in", async (t) => {
 });
 
 test("a terminal click on the zoom-in button zooms the map in", async (t) => {
+  // The wheel test's zoom animation may still run: a click during it is lost under load.
+  await until(t, "view.stationary", "view settled");
+  const before = await evaluate("view.zoom");
   const { x, y } = await evaluate(
     "(({ x, y, width, height }) => ({ x: x + width / 2, y: y + height / 4 }))(document.querySelector('arcgis-zoom').getBoundingClientRect())",
   );
   const at = `${Math.round(x)};${Math.round(y)}`;
   await type(`\x1b[<0;${at}M\x1b[<0;${at}m`);
-  await until(t, "view.zoom > 11.5", "zoom increased from 11"); // the wheel test left the map at zoom 11
+  await until(t, `view.zoom > ${before} + 0.5`, `zoom increased from ${before}`);
 });
 
 // The CLI's path: a parsed command becomes a bridge op over the socket. Layer results carry layerId; tests read id.
@@ -257,7 +260,7 @@ test("single-type GeoJSON becomes a FeatureLayer with title, renderer, labels, l
   const extent = await command({ command: "zoom", value: layer.id });
   const [xmin, ymin] = await evaluate("[view.toMap({x: 0, y: view.height}).longitude, view.toMap({x: 0, y: view.height}).latitude]");
   assert.ok(xmin <= 3 && ymin <= 61 && extent.xmin < extent.xmax, "zoom shows the layer");
-  await assert.rejects(command({ command: "zoom", value: "missing" }), /No layer with id missing/);
+  await assert.rejects(command({ command: "zoom", value: "missing" }), /no layer with id or title "missing"/);
   const shot = await command({ command: "screenshot" });
   // The bridge saves the PNG and answers its path.
   assert.deepEqual([...readFileSync(shot.path).subarray(1, 4)].map((c) => String.fromCharCode(c)).join(""), "PNG");

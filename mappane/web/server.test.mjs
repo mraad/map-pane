@@ -229,6 +229,23 @@ test('a command no page answered in time stays in the log: it may still finish, 
   later.close()
 })
 
+test('a command one page refused and another never answered stays in the log: the slow page may still finish it', async () => {
+  const refusing = page({ answer: m => (m.args?.layer === 'Split' ? { ok: false, error: 'refused' } : { ok: true, result: {} }) })
+  const silent = page({ answer: () => undefined })
+  await refusing.until(() => refusing.messages.length)
+  await silent.until(() => silent.messages.length)
+  const res = await cmd('add_graphic', { geometry: { type: 'Point', coordinates: [7, 8] }, layer: 'Split' })
+  assert.equal(res.status, 422)
+  assert.match(res.error, /^refused; another map page did not answer in 1000 ms and may still finish it/, 'the first error answers, with the timeout')
+  assert.equal(res.timedOut, true)
+  refusing.close()
+  silent.close()
+  const later = page()
+  await later.until(() => later.messages.some(m => m.args?.layer === 'Split'))
+  assert.ok(later.messages.some(m => m.replay && m.args?.layer === 'Split'))
+  later.close()
+})
+
 test('a screenshot is written to a PNG file; its path answers, not the picture', async () => {
   const png = Buffer.from('89504e470d0a1a0a', 'hex')
   const tab = page({ answer: () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${png.toString('base64')}`, width: 8, height: 4 } }) })

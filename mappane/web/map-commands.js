@@ -1,20 +1,10 @@
 import { httpUrl, validateGoTo } from "./commands.js";
 import { toGraphics } from "./geojson.js";
 
-export async function runMapCommand(view, input, signal) {
-  signal?.throwIfAborted();
-  if (!signal) return executeMapCommand(view, input);
-  let abort;
-  const aborted = new Promise((_, fail) => {
-    abort = () => fail(signal.reason);
-    signal.addEventListener("abort", abort, { once: true });
-  });
-  try {
-    // SDK imports and initial service discovery do not accept an AbortSignal.
-    return await Promise.race([executeMapCommand(view, input, signal), aborted]);
-  } finally {
-    signal.removeEventListener("abort", abort);
-  }
+// The ops that app.js delegates here: go_to location, extent, zoom (all layers), login, save-webmap, graphics.
+// The bridge times commands out, so these take no AbortSignal.
+export async function runMapCommand(view, input) {
+  return executeMapCommand(view, input);
 }
 
 // The page owns the token: it registers it with the SDK and refreshes it before it expires.
@@ -107,7 +97,7 @@ function featureCollection(layer) {
 }
 const GEOMETRY = { point: "esriGeometryPoint", multipoint: "esriGeometryMultipoint", polyline: "esriGeometryPolyline", polygon: "esriGeometryPolygon" };
 
-async function saveWebMap(view, { title }, signal) {
+async function saveWebMap(view, { title }) {
   if (typeof title !== "string" || !title.trim()) throw new Error("save-webmap needs a title");
   if (!signedInPortal) throw new Error("save-webmap needs a sign-in. Run bin/map-command login first");
   const layers = view.map.layers.toArray();
@@ -116,7 +106,6 @@ async function saveWebMap(view, { title }, signal) {
   const [WebMap, Portal] = await Promise.all([
     $arcgis.import("@arcgis/core/WebMap.js"), $arcgis.import("@arcgis/core/portal/Portal.js"),
   ]);
-  signal?.throwIfAborted();
   const local = (layer) => layer.type === "feature" && !layer.url;
   const webmap = new WebMap({
     basemap: view.map.basemap.clone(), layers: layers.filter((layer) => !local(layer)).map((layer) => layer.clone()),
@@ -124,7 +113,7 @@ async function saveWebMap(view, { title }, signal) {
   // Stores the view's viewpoint and a thumbnail in the item.
   await webmap.updateFrom(view);
   const portal = new Portal({ url: signedInPortal, authMode: "immediate" });
-  await portal.load({ signal });
+  await portal.load();
   // saveAs shares nothing: the new item is private to its owner.
   const item = await webmap.saveAs({ title: title.trim(), portal, snippet: "Saved by map-pane" });
   if (layers.some(local)) {
@@ -143,79 +132,44 @@ async function saveWebMap(view, { title }, signal) {
   };
 }
 
-async function executeMapCommand(view, input, signal) {
+async function executeMapCommand(view, input) {
   if (!input || typeof input !== "object") throw new Error("Expected a map command");
   const { command } = input;
   if (command === "extent") return view.extent.toJSON();
   if (command === "go_to") {
     validateGoTo(input);
     if (input.mode === "coordinate") {
-      await view.goTo({ center: [input.longitude, input.latitude], ...(input.zoom !== undefined && { zoom: input.zoom }) }, { signal });
+      await view.goTo({ center: [input.longitude, input.latitude], ...(input.zoom !== undefined && { zoom: input.zoom }) });
       return { extent: view.extent.toJSON() };
     }
     const locator = await $arcgis.import("@arcgis/core/rest/locator.js");
-    signal?.throwIfAborted();
     const [match] = await locator.addressToLocations("https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer", {
       address: { SingleLine: input.location.trim() }, maxLocations: 1, outSpatialReference: { wkid: 4326 },
-    }, { signal });
-    signal?.throwIfAborted();
+    });
     if (!match?.location) throw new Error(`No location found for: ${input.location}`);
-    await view.goTo(match.extent ?? { target: match.location, zoom: 16 }, { signal });
+    await view.goTo(match.extent ?? { target: match.location, zoom: 16 });
     return { address: match.address, score: match.score, extent: view.extent.toJSON() };
-  }
-  if (command === "clear") {
-    // Removes operational layers only; the basemap is not in map.layers.
-    const removed = view.map.removeAll();
-    for (const layer of removed) layer.destroy();
-    return { removed: removed.length };
-  }
-  if (command === "basemap") {
-    const Basemap = await $arcgis.import("@arcgis/core/Basemap.js");
-    signal?.throwIfAborted();
-    // Basemap styles service ids have the form {provider}/{style}; the others are legacy well-known ids.
-    const style = input.value.includes("/");
-    if (style) {
-      const [IdentityManager, esriConfig] = await Promise.all([
-        $arcgis.import("@arcgis/core/identity/IdentityManager.js"), $arcgis.import("@arcgis/core/config.js"),
-      ]);
-      // Without a token the SDK waits for an interactive sign-in that the pane cannot show: fail now instead.
-      if (!IdentityManager.credentials.length && !esriConfig.apiKey) {
-        throw new Error(`Basemap ${input.value} needs a sign-in. Run bin/map-command login first`);
-      }
-    }
-    const basemap = style ? new Basemap({ style: { id: input.value } }) : Basemap.fromId(input.value);
-    if (!basemap) throw new Error(`Unknown basemap: ${input.value}`);
-    await basemap.load({ signal });
-    signal?.throwIfAborted();
-    view.map.basemap = basemap;
-    return { basemap: input.value };
   }
   if (command === "login") {
     const IdentityManager = await $arcgis.import("@arcgis/core/identity/IdentityManager.js");
-    signal?.throwIfAborted();
     return login(IdentityManager, input);
   }
-  if (command === "save-webmap") return saveWebMap(view, input, signal);
+  if (command === "save-webmap") return saveWebMap(view, input);
   if (command === "zoom") {
     const layers = view.map.layers.filter((layer) => !input.value || layer.id === input.value).toArray();
     if (!layers.length) throw new Error(input.value ? `No layer with id ${input.value}` : "No operational layers to zoom to");
-    await Promise.all(layers.map((layer) => layer.load({ signal })));
+    await Promise.all(layers.map((layer) => layer.load()));
     // A FeatureServer root is a group layer without its own fullExtent: use its sublayers.
     const targets = layers.flatMap((layer) => [layer, ...(layer.allLayers?.toArray() ?? [])]).flatMap((layer) =>
       layer.type === "graphics" ? layer.graphics.toArray().map((g) => g.geometry) : layer.fullExtent ? [layer.fullExtent] : []);
     if (!targets.length) throw new Error("The layers have no extent");
-    await view.goTo(targets, { signal });
+    await view.goTo(targets);
     return view.extent.toJSON();
-  }
-  if (command === "screenshot") {
-    const { dataUrl, data } = await view.takeScreenshot({ format: "png" });
-    return { dataUrl, width: data.width, height: data.height };
   }
   if (command === "graphics") {
     const [GraphicsLayer, FeatureLayer] = await Promise.all([
       $arcgis.import("@arcgis/core/layers/GraphicsLayer.js"), $arcgis.import("@arcgis/core/layers/FeatureLayer.js"),
     ]);
-    signal?.throwIfAborted();
     // Validate every table before changing the map.
     const items = input.layers ?? [{ data: input.data, title: input.title ?? "GeoJSON graphics", renderer: input.renderer, labels: input.labels }];
     const layers = items.map((item) => {
@@ -229,8 +183,7 @@ async function executeMapCommand(view, input, signal) {
     // The bridge names layers, so every page that replays the log has the same ids.
     if (input.layerId) layers.forEach((layer, i) => { layer.id = layers.length > 1 ? `${input.layerId}-${i + 1}` : input.layerId; });
     try {
-      await Promise.all(layers.map((layer) => layer.load({ signal })));
-      signal?.throwIfAborted();
+      await Promise.all(layers.map((layer) => layer.load()));
     } catch (error) {
       for (const layer of layers) layer.destroy();
       throw error;
@@ -240,28 +193,5 @@ async function executeMapCommand(view, input, signal) {
       id: layer.id, title: layer.title, type: layer.type, graphics: (layer.source ?? layer.graphics).length,
     })) };
   }
-  if (!["map-service", "feature-service", "geojson"].includes(command)) throw new Error(`Unknown command: ${command}`);
-  const url = httpUrl(input.url);
-  let layer;
-  if (command === "map-service") {
-    const MapImageLayer = await $arcgis.import("@arcgis/core/layers/MapImageLayer.js");
-    layer = new MapImageLayer({ url });
-  } else if (command === "feature-service") {
-    const Layer = await $arcgis.import("@arcgis/core/layers/Layer.js");
-    layer = await Layer.fromArcGISServerUrl({ url });
-  } else {
-    const GeoJSONLayer = await $arcgis.import("@arcgis/core/layers/GeoJSONLayer.js");
-    layer = new GeoJSONLayer({ url });
-  }
-  try {
-    if (layer.loadAll) await layer.loadAll({ signal });
-    else await layer.load({ signal });
-    signal?.throwIfAborted();
-    if (layer.isTable) throw new Error("This URL is a table without geometry; use a spatial feature layer");
-    view.map.add(layer);
-    return { id: layer.id, title: layer.title, type: layer.type };
-  } catch (error) {
-    layer.destroy();
-    throw error;
-  }
+  throw new Error(`Unknown command: ${command}`);
 }

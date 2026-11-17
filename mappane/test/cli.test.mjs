@@ -23,7 +23,8 @@ function startBridge(env = {}) {
   return new Promise((ok, fail) => {
     child.stdout.on("data", (d) => {
       child.out += d;
-      if (/^(bridge: .*|BRIDGE down .*)\nSOCKET .*\n|^BRIDGE down .*\n/m.test(child.out)) ok(child);
+      // Ready once the socket listens (after `bridge:`), or down.
+      if (/^SOCKET .*\n|^BRIDGE down .*\n/m.test(child.out)) ok(child);
     });
     child.on("exit", () => ok(child));
     child.on("error", fail);
