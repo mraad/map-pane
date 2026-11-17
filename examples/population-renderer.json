@@ -1,0 +1,79 @@
+{
+ "type": "class-breaks",
+ "field": "population__millions_",
+ "legendOptions": {
+  "title": "Population (millions)"
+ },
+ "classBreakInfos": [
+  {
+   "minValue": 0,
+   "maxValue": 2,
+   "label": "< 2",
+   "symbol": {
+    "type": "simple-marker",
+    "size": 8,
+    "color": "#ffffb2",
+    "outline": {
+     "color": "#ffffff",
+     "width": 1
+    }
+   }
+  },
+  {
+   "minValue": 2,
+   "maxValue": 5,
+   "label": "2 to 5",
+   "symbol": {
+    "type": "simple-marker",
+    "size": 10,
+    "color": "#fecc5c",
+    "outline": {
+     "color": "#ffffff",
+     "width": 1
+    }
+   }
+  },
+  {
+   "minValue": 5,
+   "maxValue": 10,
+   "label": "5 to 10",
+   "symbol": {
+    "type": "simple-marker",
+    "size": 12,
+    "color": "#fd8d3c",
+    "outline": {
+     "color": "#ffffff",
+     "width": 1
+    }
+   }
+  },
+  {
+   "minValue": 10,
+   "maxValue": 20,
+   "label": "10 to 20",
+   "symbol": {
+    "type": "simple-marker",
+    "size": 14,
+    "color": "#f03b20",
+    "outline": {
+     "color": "#ffffff",
+     "width": 1
+    }
+   }
+  },
+  {
+   "minValue": 20,
+   "maxValue": 100,
+   "label": "≥ 20",
+   "symbol": {
+    "type": "simple-marker",
+    "size": 16,
+    "color": "#bd0026",
+    "outline": {
+     "color": "#ffffff",
+     "width": 1
+    }
+   }
+  }
+ ]
+}

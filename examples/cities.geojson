@@ -1,0 +1,285 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Tokyo",
+    "population (millions)": 37.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     139.69,
+     35.69
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Delhi",
+    "population (millions)": 33.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     77.21,
+     28.61
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Shanghai",
+    "population (millions)": 29.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     121.47,
+     31.23
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "São Paulo",
+    "population (millions)": 22.6
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -46.63,
+     -23.55
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Mexico City",
+    "population (millions)": 22.3
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -99.13,
+     19.43
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Cairo",
+    "population (millions)": 22.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     31.24,
+     30.04
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Mumbai",
+    "population (millions)": 21.3
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     72.88,
+     19.08
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "New York",
+    "population (millions)": 18.9
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -74.01,
+     40.71
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Lagos",
+    "population (millions)": 15.9
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     3.38,
+     6.52
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "London",
+    "population (millions)": 9.6
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -0.13,
+     51.51
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Paris",
+    "population (millions)": 11.2
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     2.35,
+     48.86
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Dubai",
+    "population (millions)": 3.6
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     55.27,
+     25.2
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Beirut",
+    "population (millions)": 2.4
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     35.5,
+     33.89
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "San Francisco",
+    "population (millions)": 3.3
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -122.42,
+     37.77
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Florence",
+    "population (millions)": 0.7
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     11.26,
+     43.77
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Sydney",
+    "population (millions)": 5.3
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     151.21,
+     -33.87
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Nairobi",
+    "population (millions)": 5.3
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     36.82,
+     -1.29
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Lima",
+    "population (millions)": 11.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -77.04,
+     -12.05
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Reykjavik",
+    "population (millions)": 0.2
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -21.94,
+     64.15
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Singapore",
+    "population (millions)": 6.0
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     103.82,
+     1.35
+    ]
+   }
+  }
+ ]
+}

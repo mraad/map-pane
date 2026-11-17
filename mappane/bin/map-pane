@@ -1,0 +1,62 @@
+#!/bin/bash
+# Show the map in this terminal (Kitty graphics); start a bridge in the background if none runs.
+#   bin/map-pane           run in the current terminal
+#   bin/map-pane --split   open a new Ghostty split to the right and run there
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [ "${1:-}" = "--split" ]; then
+  # Type the command into a normal shell with "exec". A surface started with
+  # "command" stays open after exit ("Process exited"); a shell that ends closes the split.
+  # The split starts a fresh login shell, so forward this terminal's settings explicitly.
+  CMD="exec env"
+  for VAR in CHROME MAP_PANE_DPR MAP_PANE_BASEMAP MAP_PANE_CENTER MAP_PANE_ZOOM MAP_PANE_EXTENT; do
+    if [ -n "${!VAR:-}" ]; then CMD+=" $VAR=$(printf %q "${!VAR}")"; fi
+  done
+  # Split the terminal that launched us, not the front window. Agents run commands without a
+  # controlling terminal, so take the first tty up the parent chain.
+  TTY="" PID=$$
+  while [ "$PID" -gt 1 ]; do
+    T="$(ps -o tty= -p "$PID" | tr -d ' ')"
+    if [ -n "$T" ] && [ "$T" != "??" ]; then TTY="/dev/$T"; break; fi
+    PID="$(ps -o ppid= -p "$PID" | tr -d ' ')"
+  done
+  exec osascript - "$CMD $(printf %q "$DIR/bin/map-pane")" "$TTY" <<'APPLESCRIPT'
+on run argv
+  tell application "Ghostty"
+    set cfg to new surface configuration
+    set initial input of cfg to (item 1 of argv) & linefeed
+    set matches to every terminal whose tty is (item 2 of argv)
+    -- Not launched from Ghostty: no terminal owns the tty, so use the front window.
+    if (count of matches) > 0 then
+      set target to item 1 of matches
+    else
+      set target to focused terminal of selected tab of front window
+    end if
+    split target direction right with configuration cfg
+  end tell
+end run
+APPLESCRIPT
+fi
+
+# One map per user: show the map of a running bridge (a Claude Code mod's, or another pane's) if one answers.
+# Its start view stays; MAP_PANE_* start variables apply only to a bridge started here.
+if INFO="$(node "$DIR/cli/command.mjs" --info 2>/dev/null)"; then
+  URL="$(printf '%s' "$INFO" | sed -n 's/.*"url": "\(.*\)".*/\1/p')"
+else
+  LOG="$(mktemp -t map-pane-bridge)"
+  node "$DIR/web/server.mjs" "${PORT:-0}" >"$LOG" 2>&1 &
+  BRIDGE=$!
+  # wait: reap the bridge here so bash prints no "Terminated" job message.
+  # wait is last: it returns the kill status, and set -e would stop the trap there.
+  trap 'rm -f "$LOG"; kill "$BRIDGE" 2>/dev/null; wait "$BRIDGE" 2>/dev/null' EXIT
+  # The bridge prints its URL when it is ready, or why it could not start.
+  until URL="$(sed -n 's/^bridge: //p' "$LOG" | head -1)"; [ -n "$URL" ]; do
+    if grep -q '^BRIDGE down' "$LOG" || ! kill -0 "$BRIDGE" 2>/dev/null; then
+      echo "map-pane: bridge failed:" >&2; cat "$LOG" >&2; exit 1
+    fi
+    sleep 0.1
+  done
+fi
+# embedded: the page hides its connection badge inside a pane.
+node "$DIR/pane/pane.mjs" "${URL}?embedded=1"

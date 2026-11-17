@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Map pane</title>
+  <script>
+    // Optional: ?apiKey=... enables basemap styles without login; the keyless basemaps need none.
+    const apiKey = new URLSearchParams(location.search).get("apiKey");
+    if (apiKey) var esriConfig = { apiKey };
+  </script>
+  <link rel="stylesheet" href="https://js.arcgis.com/5.2.2/esri/themes/dark/main.css">
+  <script type="module" src="https://js.arcgis.com/5.2.2/"></script>
+  <style>
+    html, body, arcgis-map { height: 100%; margin: 0; background: #1b1b1b; font-family: system-ui, sans-serif; }
+    arcgis-legend { max-height: 50vh; overflow: auto; }
+    arcgis-legend[hidden] { display: none; }
+    #badge {
+      position: absolute; left: 12px; bottom: 28px; z-index: 10;
+      padding: 4px 10px; border-radius: 4px; font-size: 12px; background: #222c; color: #fff;
+    }
+    #badge.live::before { content: "● "; color: #3c3; }
+    #badge.down::before { content: "● "; color: #d33; }
+  </style>
+</head>
+<body>
+  <arcgis-map>
+    <arcgis-zoom slot="top-left"></arcgis-zoom>
+    <arcgis-legend slot="bottom-right" hidden></arcgis-legend>
+  </arcgis-map>
+  <div id="badge" class="down">map: connecting</div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

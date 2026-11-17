@@ -1,0 +1,314 @@
+// The map page: runs the bridge's commands one at a time (SSE /events -> POST /ack). No build step.
+import { runMapCommand } from './map-commands.js'
+
+const [Graphic, GraphicsLayer, reactiveUtils, IdentityManager] = await Promise.all(
+  ['Graphic', 'layers/GraphicsLayer', 'core/reactiveUtils', 'identity/IdentityManager'].map(m => $arcgis.import(`@arcgis/core/${m}.js`)),
+)
+// Layer classes load on first use: a map with only graphics never fetches them.
+const use = m => $arcgis.import(`@arcgis/core/layers/${m}.js`)
+
+// The bridge reads the start view from MAP_PANE_* variables; see startView in commands.js.
+const start = await (await fetch('/api/start')).json()
+const mapEl = document.querySelector('arcgis-map')
+mapEl.basemap = start.basemap
+if (start.extent) mapEl.extent = { ...start.extent, spatialReference: { wkid: 4326 } }
+else Object.assign(mapEl, { center: start.center, zoom: start.zoom })
+await mapEl.viewOnReady()
+const view = mapEl.view
+const map = mapEl.map
+window.view = view // the end-to-end tests read the map state through this
+const badge = document.getElementById('badge')
+// Inside a pane (mod pane or Kitty pane) the map stays clear of the badge.
+if (new URLSearchParams(location.search).has('embedded')) badge.hidden = true
+
+// The legend tracks map.layers itself; show it only while operational layers exist.
+const legend = document.querySelector('arcgis-legend')
+const showLegend = () => { legend.hidden = map.layers.length === 0 }
+map.layers.on('change', showLegend)
+showLegend()
+
+const WGS84 = { wkid: 4326 }
+const DEFAULT_SYMBOL = {
+  point: { type: 'simple-marker', color: [226, 61, 40], size: 10, outline: { color: 'white', width: 1 } },
+  polyline: { type: 'simple-line', color: [226, 61, 40], width: 3 },
+  polygon: { type: 'simple-fill', color: [226, 61, 40, 0.35], outline: { color: [226, 61, 40], width: 2 } },
+}
+
+// GeoJSON geometry -> ArcGIS autocast geometry (WGS84).
+function toGeometry(g) {
+  switch (g?.type) {
+    case 'Point': return { type: 'point', longitude: g.coordinates[0], latitude: g.coordinates[1] }
+    case 'MultiPoint': return { type: 'multipoint', points: g.coordinates, spatialReference: WGS84 }
+    case 'LineString': return { type: 'polyline', paths: [g.coordinates], spatialReference: WGS84 }
+    case 'MultiLineString': return { type: 'polyline', paths: g.coordinates, spatialReference: WGS84 }
+    case 'Polygon': return { type: 'polygon', rings: g.coordinates, spatialReference: WGS84 }
+    case 'MultiPolygon': return { type: 'polygon', rings: g.coordinates.flat(), spatialReference: WGS84 }
+    default: throw new Error(`unsupported geometry type: ${g?.type}`)
+  }
+}
+
+// The bridge names each new layer (layerId), so every page that replays the log has the same ids.
+function graphicsLayer(title, id) {
+  let layer = map.layers.find(l => l.type === 'graphics' && l.title === title)
+  if (!layer) {
+    layer = new GraphicsLayer({ id, title })
+    map.add(layer)
+  }
+  return layer
+}
+
+function snapshot() {
+  return {
+    layers: map.layers.toArray().map(l => ({
+      id: l.id,
+      title: l.title ?? l.id,
+      type: l.type,
+      ...(l.type === 'graphics' ? { count: l.graphics.length } : {}),
+      ...(l.visible ? {} : { visible: false }),
+    })),
+    center: [+view.center.longitude.toFixed(5), +view.center.latitude.toFixed(5)],
+    zoom: Math.round(view.zoom * 10) / 10,
+  }
+}
+
+// Basemaps that need no API key: Esri raster tiles from services.arcgisonline.com, [base, labels].
+const TILES = 'https://services.arcgisonline.com/arcgis/rest/services'
+const KEYLESS = {
+  'dark-gray': ['Canvas/World_Dark_Gray_Base', 'Canvas/World_Dark_Gray_Reference'],
+  'light-gray': ['Canvas/World_Light_Gray_Base', 'Canvas/World_Light_Gray_Reference'],
+  imagery: ['World_Imagery', 'Reference/World_Boundaries_and_Places'],
+  topo: ['World_Topo_Map'],
+  streets: ['World_Street_Map'],
+}
+
+const abs = u => new URL(u, location.href).href
+const needUrl = a => {
+  if (a.missing) throw new Error(a.missing)
+  if (!a.url) throw new Error(`${a.type} layer needs url, path or data`)
+  return abs(a.url)
+}
+const byUrl = m => async a => new (await use(m))({ url: needUrl(a) })
+const LAYER_TYPES = {
+  // A FeatureServer root becomes a group of all its layers; a numbered URL one layer.
+  feature: async a => (await use('Layer')).fromArcGISServerUrl({ url: needUrl(a) }),
+  geojson: byUrl('GeoJSONLayer'),
+  csv: byUrl('CSVLayer'),
+  tile: byUrl('TileLayer'),
+  'vector-tile': byUrl('VectorTileLayer'),
+  imagery: byUrl('ImageryLayer'),
+  'map-image': byUrl('MapImageLayer'),
+  parquet: async a => {
+    if (a.missing) throw new Error(a.missing)
+    const urls = [a.url, ...(a.urls ?? [])].filter(Boolean).map(abs)
+    if (!urls.length) throw new Error('parquet layer needs url, urls or path')
+    const [ParquetLayer, ParquetFilesData, parquetUtils] = await Promise.all([
+      use('ParquetLayer'), use('support/ParquetFilesData'), use('support/parquetUtils'),
+    ])
+    const info = await parquetUtils.getParquetLayerInfo(new ParquetFilesData({ urls })).catch(err => {
+      throw new Error(`layer failed to load: ${err.message}`)
+    })
+    // GeoParquet without a `crs` means OGC:CRS84 (GDAL writes none for WGS84), but SDK 5.2 then reads the geometry
+    // with no spatial reference and every query fails ("reading 'toJSON'"). Default only a missing one: a layer-level
+    // spatialReference would override a file's own `crs`.
+    return new ParquetLayer({ ...info, spatialReference: info.spatialReference ?? { wkid: 4326 } })
+  },
+  'portal-item': async a => {
+    if (!a.itemId) throw new Error('portal-item needs itemId')
+    return (await use('Layer')).fromPortalItem({ portalItem: { id: a.itemId } })
+  },
+}
+
+// Properties add_layer and update_layer set; one a layer does not have is an error, not a silent no-op.
+const PROPERTIES = ['title', 'opacity', 'visible', 'renderer', 'definitionExpression', 'labelingInfo']
+function setProperties(layer, args) {
+  for (const key of PROPERTIES) {
+    if (args[key] === undefined) continue
+    if (!(key in layer)) throw new Error(`a ${layer.type} layer has no ${key}`)
+    layer[key] = args[key]
+  }
+  if (args.labelingInfo !== undefined && 'labelsVisible' in layer) layer.labelsVisible = true
+}
+
+// fullExtent is the whole service; queryExtent honours definitionExpression (feature, GeoJSON, CSV, Parquet).
+async function extentOf(layer) {
+  if (layer.type === 'graphics') return layer.graphics.toArray()
+  if (layer.queryExtent) {
+    const { count, extent } = await layer.queryExtent()
+    if (count > 0 && extent) return extent
+  }
+  if (!layer.fullExtent) throw new Error(`layer "${layer.title ?? layer.id}" has no extent to go to`)
+  return layer.fullExtent
+}
+
+function findLayer(key) {
+  const layer = map.findLayerById(key) ?? map.layers.find(l => l.title === key)
+  if (!layer) throw new Error(`no layer with id or title "${key}"`)
+  return layer
+}
+
+const ops = {
+  // Sent first to a page that does not have this log yet.
+  async reset() {
+    map.removeAll()
+    map.basemap = start.basemap
+  },
+
+  async add_graphic({ geometry, symbol, attributes, popupTitle, layer = 'Graphics' }, { layerId }) {
+    const geom = toGeometry(geometry)
+    const target = graphicsLayer(layer, layerId)
+    let popupTemplate
+    if (popupTitle || attributes) {
+      popupTemplate = { title: popupTitle ?? layer }
+      if (attributes) popupTemplate.content = [{ type: 'fields', fieldInfos: Object.keys(attributes).map(fieldName => ({ fieldName })) }]
+    }
+    target.add(new Graphic({
+      geometry: geom,
+      symbol: symbol ?? DEFAULT_SYMBOL[geom.type === 'multipoint' ? 'point' : geom.type],
+      attributes,
+      popupTemplate,
+    }))
+    return { layerId: target.id, graphics: target.graphics.length }
+  },
+
+  async add_layer(args, { layerId, replay }) {
+    const make = LAYER_TYPES[args.type]
+    if (!make) throw new Error(`unknown layer type: ${args.type}`)
+    const layer = await make(args)
+    layer.id = layerId
+    try {
+      await layer.load()
+    } catch (err) {
+      throw new Error(`layer failed to load: ${err.message}`)
+    }
+    if (layer.isTable) throw new Error('this URL is a table without geometry; use a spatial feature layer')
+    setProperties(layer, args)
+    // A GeoParquet file whose geometry the SDK still cannot decode loads, draws nothing and fails every
+    // query: refuse it rather than add an empty layer.
+    if (layer.type === 'parquet') {
+      await layer.queryExtent().catch(err => {
+        throw new Error(`the map cannot read the geometry of this GeoParquet file (${err.message}). Check its geo metadata.`)
+      })
+    }
+    // A click on a feature shows its attributes even when the agent gave no popup.
+    if (!layer.popupTemplate && layer.createPopupTemplate) layer.popupTemplate = layer.createPopupTemplate()
+    map.add(layer)
+    // The layer is on the map: a failed zoom must not report it as failed (the bridge would drop it from the log).
+    if (args.zoomTo !== false && !replay) await extentOf(layer).then(extent => view.goTo(extent)).catch(() => {})
+    return { layerId: layer.id, title: layer.title, type: layer.type }
+  },
+
+  async update_layer({ id, ...args }) {
+    const layer = findLayer(id)
+    setProperties(layer, args)
+    return { layerId: layer.id }
+  },
+
+  async remove_layer({ id }) {
+    const layer = findLayer(id)
+    map.remove(layer)
+    return { removed: layer.id }
+  },
+
+  async clear_graphics({ layer }) {
+    const targets = layer ? [findLayer(layer)] : map.layers.filter(l => l.type === 'graphics').toArray()
+    const other = targets.find(l => l.type !== 'graphics')
+    if (other) throw new Error(`"${other.title ?? other.id}" is a ${other.type} layer, not a graphics layer`)
+    targets.forEach(l => l.removeAll())
+    return { cleared: targets.length }
+  },
+
+  // A basemap that fails (unknown id, Esri style without a key, too slow) leaves the previous one in place.
+  async set_basemap({ basemap }) {
+    if (typeof basemap !== 'string' || !basemap) throw new Error('basemap must be a non-empty string')
+    const tiles = Object.hasOwn(KEYLESS, basemap) ? KEYLESS[basemap] : undefined
+    // Without a token the SDK waits for an interactive sign-in that a pane cannot show: fail now instead.
+    if (!tiles && basemap.includes('/') && !apiKey && !IdentityManager.credentials.length) {
+      throw new Error(`"${basemap}" is a basemap style and needs a sign-in (bin/map-command login) or the page opened with ?apiKey=. Without one use: osm, ${Object.keys(KEYLESS).join(', ')}, or another legacy id from bin/map-command basemaps.`)
+    }
+    const previous = map.basemap
+    try {
+      if (tiles) {
+        const [Basemap, TileLayer] = await Promise.all([$arcgis.import('@arcgis/core/Basemap.js'), use('TileLayer')])
+        const [base, labels] = tiles.map(name => name && new TileLayer({ url: `${TILES}/${name}/MapServer` }))
+        map.basemap = new Basemap({ id: basemap, baseLayers: [base], referenceLayers: labels ? [labels] : [] })
+      } else {
+        map.basemap = basemap
+      }
+      if (!map.basemap) throw new Error(`unknown basemap "${basemap}"`)
+      // Fail before the bridge's 15 s timeout, so the command is reported as failed and left out of the log.
+      // The view drops its zoom levels (zoom -1) until it has the new tiling: answer once they are back.
+      await Promise.race([
+        map.basemap.load().then(() => reactiveUtils.whenOnce(() => view.zoom >= 0)),
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`basemap "${basemap}" did not load in 10 s`)), 10000)),
+      ])
+    } catch (err) {
+      map.basemap = previous
+      throw err
+    }
+    return { basemap }
+  },
+
+  // location: a place or address, found by the World Geocoding service.
+  async go_to({ center, zoom, layerId, location }, { replay }) {
+    if (location !== undefined) return runMapCommand(view, { command: 'go_to', mode: 'location', location })
+    const target = layerId ? await extentOf(findLayer(layerId)) : { ...(center ? { center } : {}), ...(zoom != null ? { zoom } : {}) }
+    await view.goTo(target, { animate: !replay })
+    return { extent: view.extent.toJSON() }
+  },
+
+  // GeoJSON (or GeoPackage tables, converted by the bridge) as client-side layers: one geometry type
+  // gives a FeatureLayer (legend entry, popups, renderer, labels); mixed geometry stays graphics.
+  async graphics(args, { layerId }) {
+    return runMapCommand(view, { ...args, command: 'graphics', layerId })
+  },
+  async extent() { return runMapCommand(view, { command: 'extent' }) },
+  async zoom({ layer }) { return runMapCommand(view, { command: 'zoom', ...(layer ? { value: layer } : {}) }) },
+  async login(args) { return runMapCommand(view, { ...args, command: 'login' }) },
+  async save_webmap({ title }) { return runMapCommand(view, { command: 'save-webmap', title }) },
+
+  // A fixed width and height give the same picture size from the pane and the browser.
+  async screenshot({ width = view.width, height = view.height }) {
+    const { dataUrl } = await view.takeScreenshot({ format: 'png', width, height })
+    return { dataUrl, width, height }
+  },
+}
+
+const post = (path, body) =>
+  fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...body, state: snapshot() }) })
+
+// One command at a time, in the order sent: a replay must rebuild the map exactly.
+let queue = Promise.resolve()
+async function handle({ id, op, args, layerId, replay }) {
+  try {
+    if (!ops[op]) throw new Error(`unknown op: ${op}`)
+    const result = await ops[op](args ?? {}, { layerId, replay })
+    // A replay is not answered: the bridge waits for no one, and one /state follows the whole replay.
+    if (id != null && !replay) await post('/ack', { id, ok: true, result })
+  } catch (err) {
+    if (replay) console.warn(`replay of ${op} failed:`, err)
+    else if (id != null) await post('/ack', { id, ok: false, error: String(err?.message ?? err) })
+  }
+}
+
+const events = new EventSource('/events')
+// The bridge serves a newer page after a restart: reload, or this page keeps running its old code.
+const PAGE_VERSION = '__PAGE_VERSION__'
+events.addEventListener('version', e => e.data !== PAGE_VERSION && location.reload())
+events.onopen = () => { badge.className = 'live'; badge.textContent = 'map: connected' }
+events.onerror = () => { badge.className = 'down'; badge.textContent = 'map: disconnected' }
+// A failed /ack post (bridge restarting) must not stop the queue for every later command.
+// While commands run, the page reports nothing by itself: a half-done replay is not the map state.
+let busy = 0
+events.onmessage = msg => {
+  const command = JSON.parse(msg.data)
+  busy++
+  queue = queue
+    .then(() => handle(command))
+    .catch(err => console.warn(`${command.op} failed:`, err))
+    .finally(() => { if (--busy === 0 && command.replay) report() })
+}
+// Tell the bridge when the user pans or changes layers by hand.
+let timer
+const report = () => { clearTimeout(timer); timer = setTimeout(() => busy || post('/state', {}), 500) }
+reactiveUtils.watch(() => view.stationary, s => s && report())
+map.layers.on('change', report)

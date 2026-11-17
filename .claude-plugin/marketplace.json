@@ -1,0 +1,5 @@
+{
+  "name": "map-pane",
+  "owner": { "name": "mraad" },
+  "plugins": [{ "name": "mappane", "source": "./mappane" }]
+}

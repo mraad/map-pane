@@ -1,0 +1,12 @@
+# Engine-written mod types (regenerated per session)
+mappane/.claude-plugin/types/
+# Per-machine Claude Code settings and session id
+.claude/settings.json
+.claude/settings.local.json
+.resume
+.DS_Store
+node_modules/
+
+# Chrome profile of the /map browser window
+mappane/.browser-profile/
+tasks/
