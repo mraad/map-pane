@@ -70,8 +70,9 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `go_to location <place or address>` | Finds a country, state, city, ZIP code or address with the World Geocoding service. Prints the match, the score and the extent. |
 | `go_to coordinate <lat> <lon> [zoom]` | Centers on WGS84 degrees, latitude first. Keeps the zoom unless you give one (0 to 23). |
 | `screenshot <file.png>` | Writes a PNG of the map. The PNG has no legend. |
-| `basemaps` | Prints the basemap ids. Needs no running map. |
-| `basemap <id>` | Sets the basemap. |
+| `basemap` | Prints the current basemap: `id` and `title`. |
+| `basemap list` | Prints the basemaps you can use now. See [Basemaps](#6-basemaps). |
+| `basemap <id>` | Sets the basemap: a keyless, legacy or style id, or a portal basemap item id. |
 | `login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]` | Signs in to a portal. See [Sign in](#7-sign-in). |
 | `save-webmap <title>` | Saves the map as a private web map item. Needs `login`. |
 | `map-service <url>` | Adds a MapServer. |
@@ -122,13 +123,16 @@ A property with only numbers becomes a `double` field. Other properties become `
 
 ## 6. Basemaps
 
-`basemaps` prints two lists:
+`basemap list` asks the running map. The list depends on the sign-in:
 
+- `current`: the basemap on the map now (`id`, `title`). `signedIn`: `true` after `login`.
+- `keyless`: 5 Esri raster basemaps with no key: `dark-gray`, `light-gray`, `imagery`, `topo`, `streets`.
 - `legacy`: 16 ids that work with no sign-in, for example `osm`, `satellite`, `dark-gray-vector`.
-- `styles`: 78 basemap style ids, for example `arcgis/navigation`. These need `login`.
+- `styles`: 78 basemap style ids, for example `arcgis/navigation`. Only after `login` (or with `?apiKey=`).
+- `portal`: the basemap gallery of the portal you signed in to, as `id` (item id) and `title`. Only after `login`.
 
-The keyless raster basemaps `dark-gray`, `light-gray`, `imagery`, `topo` and `streets` also work.
-A basemap that fails leaves the current basemap in place.
+With no running map, `basemap list` prints `keyless`, `legacy` and `styles` and a note on standard error.
+`basemap <item-id>` sets a portal basemap. A basemap that fails leaves the current basemap in place.
 
 ## 7. Sign in
 

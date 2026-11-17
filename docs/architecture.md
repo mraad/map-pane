@@ -37,10 +37,11 @@ Stdout lines that the mod reads: `bridge: <url>`, `SOCKET <path>`, `STATE {...}`
 
 | Op | Logged | Notes |
 |---|---|---|
-| `add_graphic`, `add_layer`, `update_layer`, `remove_layer`, `clear_graphics`, `set_basemap` | yes | From the mod. `add_layer` `feature` uses `Layer.fromArcGISServerUrl` (a FeatureServer root becomes a group layer). |
+| `add_graphic`, `add_layer`, `update_layer`, `remove_layer`, `clear_graphics`, `set_basemap` | yes | From the mod. `set_basemap` also takes a portal basemap item id. `add_layer` `feature` uses `Layer.fromArcGISServerUrl` (a FeatureServer root becomes a group layer). |
 | `graphics` | yes | GeoJSON (or decoded GeoPackage tables) as client-side layers (`runMapCommand` in `web/map-commands.js`). One geometry type: FeatureLayer with legend and popups. Mixed: GraphicsLayer. |
 | `geopackage` | as `graphics` | Decoded in the bridge (`cli/geopackage.mjs`, isolated child, read-only SQLite) and logged as a `graphics` op with inline tables. |
 | `go_to`, `screenshot`, `extent`, `zoom`, `save_webmap` | no | Read the map or move the view. `go_to {location}` geocodes. |
+| `get_basemap`, `list_basemaps` | no | The current basemap; the basemaps usable now (styles and the portal gallery only after `login`). |
 | `login` | no | Carries a token. Never logged, never saved; the last one is kept in memory and replayed first to each new page. |
 | `reset` | n/a | Sent by the bridge. Removes all layers and restores the start basemap. |
 
