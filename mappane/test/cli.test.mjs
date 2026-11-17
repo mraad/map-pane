@@ -72,7 +72,7 @@ async function page(t) {
   };
   const reply = async (message, result, error) => {
     const res = await fetch(`${url}ack`, { method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify(error ? { id: message.id, ok: false, error } : { id: message.id, ok: true, result }) });
+      body: JSON.stringify(error ? { id: message.id, tab: message.tab, ok: false, error } : { id: message.id, tab: message.tab, ok: true, result }) });
     assert.equal(res.status, 200);
   };
   return { next, reply };

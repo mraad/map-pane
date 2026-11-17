@@ -70,7 +70,7 @@ function page({ port = PORT, lastEventId, answer = () => ({ ok: true, result: {}
         messages.push(message)
         ids.push(/^id: (.*)$/m.exec(block)?.[1])
         if (message.id != null && !message.replay) {
-          Promise.resolve(answer(message)).then(reply => reply && call('POST', '/ack', { body: { id: message.id, ...reply }, port }))
+          Promise.resolve(answer(message)).then(reply => reply && call('POST', '/ack', { body: { id: message.id, tab: message.tab, ...reply }, port }))
         }
       }
     })
@@ -279,6 +279,36 @@ test('a slow GeoPackage and a quick command get increasing delivery ids and reco
   await cmd('extent')
   await back.until(() => back.messages.some(m => m.op === 'extent'))
   assert.deepEqual(back.messages.map(m => m.op), ['extent'])
+})
+
+test('a page that failed and then closed does not decide for a page that has not answered yet', async t => {
+  const failing = page({ answer: () => { setTimeout(() => failing.close(), 20); return { ok: false, error: 'broken page' } } })
+  const slow = page({ answer: () => sleep(200).then(() => ({ ok: true, result: { from: 'slow' } })) })
+  t.after(() => { failing.close(); slow.close() })
+  await failing.ready
+  await slow.ready
+  const res = await cmd('clear_graphics')
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.result, { from: 'slow' })
+})
+
+test('a page that replayed a pending command keeps it in the log when the page it was sent to closes', async t => {
+  const first = page({ answer: () => undefined })
+  t.after(() => first.close())
+  await first.ready
+  const pending = cmd('add_graphic', { geometry: { type: 'Point', coordinates: [7, 8] }, layer: 'Replayed' })
+  await first.until(() => first.messages.some(m => m.args?.layer === 'Replayed'))
+  const joined = page({ answer: () => undefined })
+  t.after(() => joined.close())
+  await joined.until(() => joined.messages.some(m => m.replay && m.args?.layer === 'Replayed'))
+  first.close()
+  const res = await pending
+  assert.equal(res.timedOut, true, 'the joined page holds it open until the timeout')
+  joined.close()
+  const later = page()
+  t.after(() => later.close())
+  await later.until(() => later.messages.some(m => m.args?.layer === 'Replayed'))
+  assert.ok(later.messages.some(m => m.replay && m.args?.layer === 'Replayed'))
 })
 
 test('a command no page answered in time stays in the log: it may still finish, so later pages replay it', async () => {

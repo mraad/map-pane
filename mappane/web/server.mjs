@@ -100,6 +100,9 @@ const saveLog = () => SAVE && writeJson(SAVE, { epoch, log })
 const saveView = () => VIEW && writeJson(VIEW, { center: state.center, zoom: state.zoom })
 
 const tabs = new Set()
+// Each page's id: a command carries it to that page, and the page's /ack sends it back.
+const tabIds = new WeakMap()
+let nextTab = 1
 // The last successful login's args (token included): memory only, replayed to each new page.
 let lastLogin
 // /cmd calls waiting for a first page (the mod just opened the pane): resolved when a page connects.
@@ -274,6 +277,7 @@ const handler = async (req, res) => {
       for (const entry of log) if (!isKnown || entry.id > Number(lastN)) sse(res, toPage(entry, true))
       if (!isKnown && state.center) sse(res, { op: 'go_to', args: { center: state.center, zoom: state.zoom }, replay: true }, false)
       tabs.add(res)
+      tabIds.set(res, nextTab++)
       for (const wake of tabWaiters) wake()
       publish()
       req.on('close', () => {
@@ -375,7 +379,7 @@ const handler = async (req, res) => {
       const timeout = TIMEOUT_MS[entry.op] ?? DEFAULT_TIMEOUT_MS
       // The first page that succeeds answers; an error answers only when every page failed.
       const ack = await new Promise(resolve => {
-        let failures = 0
+        const failed = new Set()
         let firstError
         const settle = value => {
           clearTimeout(timer)
@@ -388,11 +392,13 @@ const handler = async (req, res) => {
           if (answer?.ok) return settle(answer)
           if (answer) {
             firstError ??= answer
-            failures++
+            failed.add(answer.tab)
           }
-          const connected = targets.filter(tab => tabs.has(tab)).length
-          if (connected === 0) settle(firstError ?? { ok: false, error: 'every target map page closed before it answered' })
-          else if (firstError && failures >= connected) settle(firstError)
+          // A page that connected later applied a logged command through its replay, which is never answered:
+          // it keeps the command open until the timeout, so the log keeps what that page shows.
+          const live = isLogged ? [...tabs] : targets.filter(tab => tabs.has(tab))
+          if (live.length === 0) settle(firstError ?? { ok: false, error: 'every target map page closed before it answered' })
+          else if (firstError && live.every(tab => failed.has(tabIds.get(tab)))) settle(firstError)
         })
         const timer = setTimeout(
           // Timed out: a page may still finish it, so it stays in the log even when another page failed.
@@ -406,7 +412,7 @@ const handler = async (req, res) => {
           timeout,
         )
         const message = toPage(entry, false)
-        for (const tab of targets) sse(tab, message)
+        for (const tab of targets) sse(tab, { ...message, tab: tabIds.get(tab) })
       })
       // A timed-out command may still finish on a page: keep it, so later pages replay the same map.
       if (isLogged && !ack.ok && !ack.timedOut) {
