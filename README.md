@@ -77,6 +77,29 @@ The bridge keeps a log of the map changes and replays it to each page that opens
 All pages show the same map. With the mod running, the CLI and the skill drive the mod's map.
 Details: [docs/architecture.md](docs/architecture.md).
 
+## Environment variables
+
+All are optional, except `MAP_PANE_CLIENT_ID` for `login`.
+
+| Variable | Default | Read by | Purpose |
+|---|---|---|---|
+| `MAP_PANE_BASEMAP` | `osm` | launcher | Start basemap. Legacy ids only. |
+| `MAP_PANE_CENTER` | none | launcher | Start center, `latitude,longitude`. |
+| `MAP_PANE_ZOOM` | `3` | launcher | Start zoom, 0 to 23. Needs `MAP_PANE_CENTER`. |
+| `MAP_PANE_EXTENT` | the world | launcher | Start extent, `xmin,ymin,xmax,ymax` in longitude/latitude. Overrides center and zoom. |
+| `MAP_PANE_DPR` | `2` | Ghostty pane | Terminal pixels for each CSS pixel. Use `1` on a display that is not Retina. |
+| `CHROME` | `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` | panes | Chrome binary. `chrome-headless-shell` also works. |
+| `MAP_PANE_SOCKET` | the newest map | CLI | The bridge socket to send commands to. |
+| `MAP_PANE_PORTAL_URL` | `https://www.arcgis.com` | `login` | Portal to sign in to. |
+| `MAP_PANE_CLIENT_ID` | none | `login` | OAuth client ID. Required for `login`. |
+| `MAP_PANE_REDIRECT_URI` | `http://127.0.0.1:8766/` | `login` | OAuth redirect URI. It must be registered on the client ID. |
+| `MAP_PANE_OPEN` | on | `login` | `0` stops `login` from opening the browser on macOS. |
+| `MAP_PANE_TIMEOUT_MS` | `15000` | bridge | Command timeout. Adding data waits 60 s. |
+| `MAP_PANE_IDLE_MS` | `90000` | bridge | The pane's Chrome stops after this time with no pane input. |
+| `MAP_PANE_FAILURE_WINDOW_MS` | `60000` | bridge | Chrome failures closer together than this count toward the limit of 3 restarts. |
+| `MAP_PANE_TOKEN` | none | bridge | Token for the TCP control endpoints. The mod sets it. |
+| `MAP_PANE_SESSION` | none | bridge | Saves the map log and view in `~/.claude/map-pane/sessions/<id>/`. The mod sets it. |
+
 ## Test
 
 ```sh

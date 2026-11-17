@@ -105,8 +105,8 @@ function setProperties(layer, args) {
   for (const key of PROPERTIES) {
     if (args[key] === undefined) continue
     if (!(key in layer)) throw new Error(`a ${layer.type} layer has no ${key}`)
-    layer[key] = args[key]
   }
+  for (const key of PROPERTIES) if (args[key] !== undefined) layer[key] = args[key]
   if (args.labelingInfo !== undefined && 'labelsVisible' in layer) layer.labelsVisible = true
 }
 
@@ -281,15 +281,15 @@ const post = (path, body) =>
 
 // One command at a time, in the order sent: a replay must rebuild the map exactly.
 let queue = Promise.resolve()
-async function handle({ id, op, args, layerId, replay }) {
+async function handle({ id, op, args, layerId, replay, tab }) {
   try {
     if (!ops[op]) throw new Error(`unknown op: ${op}`)
     const result = await ops[op](args ?? {}, { layerId, replay })
     // A replay is not answered: the bridge waits for no one, and one /state follows the whole replay.
-    if (id != null && !replay) await post('/ack', { id, ok: true, result })
+    if (id != null && !replay) await post('/ack', { id, tab, ok: true, result })
   } catch (err) {
     if (replay) console.warn(`replay of ${op} failed:`, err)
-    else if (id != null) await post('/ack', { id, ok: false, error: String(err?.message ?? err) })
+    else if (id != null) await post('/ack', { id, tab, ok: false, error: String(err?.message ?? err) })
   }
 }
 

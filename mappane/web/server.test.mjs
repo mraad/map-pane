@@ -3,8 +3,9 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs'
-import { request } from 'node:http'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { createServer, request } from 'node:http'
+import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -51,8 +52,11 @@ const cmd = (op, args = {}, port = PORT) => call('POST', '/cmd', { body: { op, a
 function page({ port = PORT, lastEventId, answer = () => ({ ok: true, result: {} }) } = {}) {
   const messages = []
   const ids = []
+  let connected
+  const ready = new Promise(resolve => { connected = resolve })
   const headers = { host: `127.0.0.1:${port}`, ...(lastEventId ? { 'last-event-id': lastEventId } : {}) }
   const req = request({ host: '127.0.0.1', port, path: '/events', headers }, res => {
+    connected()
     let buffer = ''
     res.on('data', chunk => {
       buffer += chunk
@@ -66,7 +70,7 @@ function page({ port = PORT, lastEventId, answer = () => ({ ok: true, result: {}
         messages.push(message)
         ids.push(/^id: (.*)$/m.exec(block)?.[1])
         if (message.id != null && !message.replay) {
-          Promise.resolve(answer(message)).then(reply => reply && call('POST', '/ack', { body: { id: message.id, ...reply }, port }))
+          Promise.resolve(answer(message)).then(reply => reply && call('POST', '/ack', { body: { id: message.id, tab: message.tab, ...reply }, port }))
         }
       }
     })
@@ -75,7 +79,7 @@ function page({ port = PORT, lastEventId, answer = () => ({ ok: true, result: {}
   const until = async check => {
     for (let i = 0; i < 200 && !check(); i++) await sleep(10)
   }
-  return { messages, ids, until, close: () => req.destroy() }
+  return { messages, ids, ready, until, close: () => req.destroy() }
 }
 
 // Runs first: no page is connected yet.
@@ -214,6 +218,117 @@ test('the first page that succeeds answers, even when another page failed first'
   const alone = await cmd('clear_graphics')
   assert.equal(alone.error, 'broken page', 'with every page failed, the error answers')
   failing.close()
+})
+
+test('save_webmap runs on one page and never fails over after an error or disconnect', async t => {
+  let outcome = 'success'
+  const first = page({ answer: m => {
+    if (m.op !== 'save_webmap') return { ok: true }
+    if (outcome === 'disconnect') { first.close(); return undefined }
+    return outcome === 'success' ? { ok: true, result: { id: 'one-item' } } : { ok: false, error: 'save failed' }
+  } })
+  const second = page()
+  t.after(() => { first.close(); second.close() })
+  await first.until(() => first.messages.length)
+  await second.until(() => second.messages.length)
+  const saved = await cmd('save_webmap', { title: 'One item' })
+  assert.equal(saved.status, 200)
+  assert.equal(saved.result.id, 'one-item')
+  outcome = 'failure'
+  assert.equal((await cmd('save_webmap', { title: 'Failed item' })).error, 'save failed')
+  outcome = 'disconnect'
+  const closed = await cmd('save_webmap', { title: 'Uncertain item' })
+  assert.equal(closed.status, 422)
+  assert.match(closed.error, /target map page closed/)
+  await cmd('extent')
+  await second.until(() => second.messages.some(m => m.op === 'extent'))
+  assert.ok(second.messages.some(m => m.op === 'extent'), 'the other page remains connected')
+  assert.equal(second.messages.filter(m => m.op === 'save_webmap').length, 0)
+})
+
+test('a slow GeoPackage and a quick command get increasing delivery ids and reconnect without duplicates', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'map-order-test-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const file = join(dir, 'data.gpkg')
+  const db = new DatabaseSync(file)
+  try { db.exec(readFileSync(new URL('../test/fixtures/vector.sql', import.meta.url), 'utf8')) } finally { db.close() }
+  let respond, accepted
+  const arrived = new Promise(resolve => { accepted = resolve })
+  const server = createServer((req, res) => {
+    respond = () => res.end(readFileSync(file))
+    accepted()
+  })
+  t.after(() => { server.closeAllConnections(); server.close() })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const downloadUrl = `http://127.0.0.1:${server.address().port}/data.gpkg`
+  const tab = page()
+  t.after(() => tab.close())
+  await tab.ready
+  const slow = cmd('geopackage', { url: downloadUrl })
+  await arrived
+  const fast = await cmd('add_graphic', { geometry: { type: 'Point', coordinates: [1, 2] }, layer: 'During download' })
+  assert.equal(fast.status, 200)
+  respond()
+  assert.equal((await slow).status, 200)
+  const delivered = tab.messages.filter(m => m.id != null && !m.replay)
+  assert.deepEqual(delivered.map(m => m.op), ['add_graphic', 'graphics'])
+  assert.ok(delivered[0].id < delivered[1].id)
+  const back = page({ lastEventId: tab.ids.at(-1) })
+  t.after(() => back.close())
+  await back.ready
+  await cmd('extent')
+  await back.until(() => back.messages.some(m => m.op === 'extent'))
+  assert.deepEqual(back.messages.map(m => m.op), ['extent'])
+})
+
+test('a page that failed and then closed does not decide for a page that has not answered yet', async t => {
+  const failing = page({ answer: () => { setTimeout(() => failing.close(), 20); return { ok: false, error: 'broken page' } } })
+  const slow = page({ answer: () => sleep(200).then(() => ({ ok: true, result: { from: 'slow' } })) })
+  t.after(() => { failing.close(); slow.close() })
+  await failing.ready
+  await slow.ready
+  const res = await cmd('clear_graphics')
+  assert.equal(res.status, 200)
+  assert.deepEqual(res.result, { from: 'slow' })
+})
+
+test('a page that replayed a pending command keeps it in the log when the page it was sent to closes', async t => {
+  const first = page({ answer: () => undefined })
+  t.after(() => first.close())
+  await first.ready
+  const pending = cmd('add_graphic', { geometry: { type: 'Point', coordinates: [7, 8] }, layer: 'Replayed' })
+  await first.until(() => first.messages.some(m => m.args?.layer === 'Replayed'))
+  const joined = page({ answer: () => undefined })
+  t.after(() => joined.close())
+  await joined.until(() => joined.messages.some(m => m.replay && m.args?.layer === 'Replayed'))
+  first.close()
+  const res = await pending
+  assert.equal(res.timedOut, true, 'the joined page holds it open until the timeout')
+  joined.close()
+  const later = page()
+  t.after(() => later.close())
+  await later.until(() => later.messages.some(m => m.args?.layer === 'Replayed'))
+  assert.ok(later.messages.some(m => m.replay && m.args?.layer === 'Replayed'))
+})
+
+test('a pending command a page replayed stays in the log after that page disconnects and the target closes', async t => {
+  const first = page({ answer: () => undefined })
+  t.after(() => first.close())
+  await first.ready
+  const pending = cmd('add_graphic', { geometry: { type: 'Point', coordinates: [9, 9] }, layer: 'Dropped joiner' })
+  await first.until(() => first.messages.some(m => m.args?.layer === 'Dropped joiner'))
+  const joined = page()
+  await joined.until(() => joined.messages.some(m => m.replay && m.args?.layer === 'Dropped joiner'))
+  joined.close()
+  await sleep(50) // the bridge sees the close
+  first.close()
+  const res = await pending
+  assert.equal(res.status, 422)
+  assert.match(res.error, /target map page closed/)
+  const later = page()
+  t.after(() => later.close())
+  await later.until(() => later.messages.some(m => m.args?.layer === 'Dropped joiner'))
+  assert.ok(later.messages.some(m => m.replay && m.args?.layer === 'Dropped joiner'))
 })
 
 test('a command no page answered in time stays in the log: it may still finish, so later pages replay it', async () => {
@@ -419,7 +534,7 @@ test('a page that closes without answering does not hold up the others: the erro
   const last = page({ answer: () => undefined })
   await last.until(() => last.messages.length)
   setTimeout(() => last.close(), 100)
-  assert.equal((await cmd('clear_graphics')).error, 'every map page closed before it answered')
+  assert.equal((await cmd('clear_graphics')).error, 'every target map page closed before it answered')
 })
 
 test('inline GeoJSON of a layer every page refused is no longer served', async () => {

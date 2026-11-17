@@ -115,7 +115,7 @@ export async function startViewer({ url, columns, rows, onFrame, onExit = () => 
     stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'pipe'],
   })
   proc.stderr.on('data', () => {}) // Chrome is chatty on stderr; drain it so it never blocks.
-  const exited = new Promise(resolve => proc.on('exit', resolve))
+  const exited = new Promise(resolve => proc.on('close', resolve))
   const toChrome = proc.stdio[3]
   const fromChrome = proc.stdio[4]
   let nextId = 0
@@ -136,9 +136,12 @@ export async function startViewer({ url, columns, rows, onFrame, onExit = () => 
   })
   toChrome.on('error', () => {}) // a Chrome that died closes the pipe; `exited` reports it.
   // A Chrome that exits (missing, crashed) fails every call still waiting instead of hanging it.
-  const gone = exited.then(code => {
-    throw new Error(`Chrome exited (${code}); set CHROME to its path if it is not ${CHROME}`)
-  })
+  const gone = Promise.race([
+    new Promise((_, reject) => proc.once('error', reject)),
+    exited.then(code => {
+      throw new Error(`Chrome exited (${code}); set CHROME to its path if it is not ${CHROME}`)
+    }),
+  ])
   gone.catch(() => {})
   const send = (method, params = {}, sessionId) =>
     Promise.race([

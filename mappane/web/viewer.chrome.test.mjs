@@ -112,9 +112,10 @@ test('the tools work on the real page; a page that connects later rebuilds the s
   const renderer = { type: 'simple', symbol: { type: 'simple-marker', color: 'blue', size: 9 } }
   assert.equal((await cmd('update_layer', { id: 'Results', renderer, labelingInfo: labels, definitionExpression: 'score > 5' })).status, 200)
   assert.equal((await cmd('add_graphic', { geometry: { type: 'Point', coordinates: [0, 0] }, layer: 'Notes' })).status, 200)
-  const wrong = await cmd('update_layer', { id: 'Notes', definitionExpression: 'x = 1' })
+  const wrong = await cmd('update_layer', { id: 'Notes', title: 'Changed notes', definitionExpression: 'x = 1' })
   assert.equal(wrong.status, 422)
   assert.match(wrong.error, /graphics layer has no definitionExpression/)
+  assert.ok(wrong.state.layers.some(l => l.title === 'Notes'), 'a rejected update keeps the original title')
   assert.equal((await cmd('set_basemap', { basemap: 'no-such-basemap' })).status, 422)
   // An Esri style without a key is refused at once, not after a timeout with an empty map.
   const t0 = Date.now()

@@ -100,11 +100,16 @@ const saveLog = () => SAVE && writeJson(SAVE, { epoch, log })
 const saveView = () => VIEW && writeJson(VIEW, { center: state.center, zoom: state.zoom })
 
 const tabs = new Set()
+// Each page's id: a command carries it to that page, and the page's /ack sends it back.
+const tabIds = new WeakMap()
+let nextTab = 1
 // The last successful login's args (token included): memory only, replayed to each new page.
 let lastLogin
 // /cmd calls waiting for a first page (the mod just opened the pane): resolved when a page connects.
 const tabWaiters = new Set()
 const pending = new Map()
+// Ids of pending commands a page already got in its replay: that page may show them, even after it disconnects.
+const replayed = new Set()
 let state = { layers: [], ...saved.view }
 // Local files the mod asked to show, by key and by path.
 const files = new Map()
@@ -214,7 +219,7 @@ const CONTROL = new Set(['/cmd', '/input', '/clear'])
 
 // Inline GeoJSON becomes a file in the data folder, so the log stays small and holds a path like any other.
 // A GeoPackage (URL or local path) becomes a graphics command with its tables decoded here.
-async function prepare(cmd, id) {
+async function prepare(cmd) {
   const args = { ...(cmd.args ?? {}) }
   if (cmd.op === 'geopackage') {
     const { loadGeoPackage, readGeoPackageIsolated } = await import('../cli/geopackage.mjs')
@@ -222,18 +227,18 @@ async function prepare(cmd, id) {
     if (typeof source !== 'string' || !source) throw new Error('geopackage needs url or path')
     // shortcut: the decoded tables go into the log as inline data; store them as files if logs get large.
     const layers = args.path ? await readGeoPackageIsolated(args.path, args.table) : await loadGeoPackage(args.url, args.table)
-    return { id, op: 'graphics', args: { layers } }
+    return { op: 'graphics', args: { layers } }
   }
   // graphics keeps its GeoJSON inline: the page decodes it into client-side layers.
   if (args.data !== undefined && cmd.op !== 'graphics') {
     if (cmd.op !== 'add_layer' || args.type !== 'geojson') throw new Error('data is for add_layer with type "geojson", or graphics, only')
-    const path = join(DATA, `layer-${epoch}-${id}.geojson`)
+    const path = join(DATA, `layer-${randomUUID()}.geojson`)
     writeFileSync(path, typeof args.data === 'string' ? args.data : JSON.stringify(args.data))
     delete args.data
     args.path = path
   }
   if (args.path !== undefined) serve(args.path) // refuse a bad path now, not on the page
-  return { id, op: cmd.op, args }
+  return { op: cmd.op, args }
 }
 
 const handler = async (req, res) => {
@@ -271,9 +276,14 @@ const handler = async (req, res) => {
       if (!isKnown) sse(res, { op: 'reset' }, false)
       // Before the log: a logged basemap style or portal layer needs the token to replay.
       if (!isKnown && lastLogin) sse(res, { op: 'login', args: lastLogin, replay: true }, false)
-      for (const entry of log) if (!isKnown || entry.id > Number(lastN)) sse(res, toPage(entry, true))
+      for (const entry of log) {
+        if (isKnown && entry.id <= Number(lastN)) continue
+        sse(res, toPage(entry, true))
+        if (pending.has(entry.id)) replayed.add(entry.id)
+      }
       if (!isKnown && state.center) sse(res, { op: 'go_to', args: { center: state.center, zoom: state.zoom }, replay: true }, false)
       tabs.add(res)
+      tabIds.set(res, nextTab++)
       for (const wake of tabWaiters) wake()
       publish()
       req.on('close', () => {
@@ -361,18 +371,21 @@ const handler = async (req, res) => {
       }
       let entry
       try {
-        entry = await prepare(cmd, nextId++)
+        entry = await prepare(cmd)
       } catch (err) {
         return json(res, 400, { ok: false, error: err.message, state: snapshot() })
       }
+      // Preparation can finish out of order: replay ids must follow delivery order.
+      entry.id = nextId++
       const isLogged = !READ_ONLY.has(entry.op)
       // Logged before it is sent, so a page that connects meanwhile gets it in its replay.
       if (isLogged) log.push(entry)
-      const expected = tabs.size
+      // Saving writes to the portal: never run it on a second page, even if the first fails.
+      const targets = entry.op === 'save_webmap' ? [...tabs].slice(0, 1) : [...tabs]
       const timeout = TIMEOUT_MS[entry.op] ?? DEFAULT_TIMEOUT_MS
       // The first page that succeeds answers; an error answers only when every page failed.
       const ack = await new Promise(resolve => {
-        let failures = 0
+        const failed = new Set()
         let firstError
         const settle = value => {
           clearTimeout(timer)
@@ -385,10 +398,13 @@ const handler = async (req, res) => {
           if (answer?.ok) return settle(answer)
           if (answer) {
             firstError ??= answer
-            failures++
+            failed.add(answer.tab)
           }
-          if (tabs.size === 0) settle(firstError ?? { ok: false, error: 'every map page closed before it answered' })
-          else if (firstError && failures >= Math.min(expected, tabs.size)) settle(firstError)
+          // A page that connected later applied a logged command through its replay, which is never answered:
+          // it keeps the command open until the timeout, so the log keeps what that page shows.
+          const live = isLogged ? [...tabs] : targets.filter(tab => tabs.has(tab))
+          if (live.length === 0) settle(firstError ?? { ok: false, error: 'every target map page closed before it answered' })
+          else if (firstError && live.every(tab => failed.has(tabIds.get(tab)))) settle(firstError)
         })
         const timer = setTimeout(
           // Timed out: a page may still finish it, so it stays in the log even when another page failed.
@@ -402,10 +418,12 @@ const handler = async (req, res) => {
           timeout,
         )
         const message = toPage(entry, false)
-        for (const tab of tabs) sse(tab, message)
+        for (const tab of targets) sse(tab, { ...message, tab: tabIds.get(tab) })
       })
-      // A timed-out command may still finish on a page: keep it, so later pages replay the same map.
-      if (isLogged && !ack.ok && !ack.timedOut) {
+      // A timed-out command may still finish on a page, and a replayed one may be on a page already:
+      // keep both, so later pages replay the same map.
+      const wasReplayed = replayed.delete(entry.id)
+      if (isLogged && !ack.ok && !ack.timedOut && !wasReplayed) {
         log = log.filter(e => e !== entry)
         forget(entry.args.path)
       }

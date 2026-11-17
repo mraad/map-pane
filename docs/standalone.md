@@ -65,6 +65,8 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `extent` | Prints the bounds and spatial reference of the view. |
 | `clear` | Removes all layers. The basemap goes back to the start basemap. The legend hides. |
 | `zoom [layer-id]` | Shows all layers, or one layer. |
+| `remove <layer-id or title>` | Removes one layer. The other layers and the basemap stay. |
+| `update-layer <layer-id or title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true\|false]` | Changes one layer without reloading its data. Give at least one option. `--labels` turns labels on. `--filter` sets the SQL where clause (feature, GeoJSON, CSV and GeoParquet layers). |
 | `go_to location <place or address>` | Finds a country, state, city, ZIP code or address with the World Geocoding service. Prints the match, the score and the extent. |
 | `go_to coordinate <lat> <lon> [zoom]` | Centers on WGS84 degrees, latitude first. Keeps the zoom unless you give one (0 to 23). |
 | `screenshot <file.png>` | Writes a PNG of the map. The PNG has no legend. |
@@ -149,6 +151,7 @@ mappane/bin/map-command basemap arcgis/navigation
 - `login` prints the sign-in URL on standard error. Open it yourself if no browser opens.
 - Only one `login` can wait at a time, because it listens on port 8766. Use `--redirect-uri` or `MAP_PANE_REDIRECT_URI` for another loopback port.
 - Pages that open later get the sign-in from the bridge. After a bridge restart, sign in again.
+- A save runs on one page and keeps filters on local feature layers. If that page disconnects while saving, check the portal before retrying: the item may already exist.
 
 ## 8. Agents
 

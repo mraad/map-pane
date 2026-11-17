@@ -38,6 +38,23 @@ export function toOp(command) {
     case "go_to": return input.mode === "location"
       ? { op: "go_to", args: { location: input.location } }
       : { op: "go_to", args: { center: [input.longitude, input.latitude], ...(input.zoom !== undefined && { zoom: input.zoom }) } };
+    case "remove": return { op: "remove_layer", args: { id: input.layer } };
+    case "update-layer": {
+      const { layer, title, renderer, labels, filter, opacity, visible } = input;
+      const args = { id: layer, title, renderer, labelingInfo: labels && [labels].flat(), definitionExpression: filter };
+      if (opacity !== undefined) {
+        args.opacity = opacity.trim() ? Number(opacity) : NaN;
+        if (!(args.opacity >= 0 && args.opacity <= 1)) throw new Error("--opacity must be between 0 and 1");
+      }
+      if (visible !== undefined) {
+        if (!["true", "false"].includes(visible)) throw new Error("--visible must be true or false");
+        args.visible = visible === "true";
+      }
+      if (Object.values(args).filter((value) => value !== undefined).length < 2) {
+        throw new Error("update-layer needs at least one of --title, --renderer, --labels, --filter, --opacity, --visible");
+      }
+      return { op: "update_layer", args: JSON.parse(JSON.stringify(args)) };
+    }
     case "screenshot": return { op: "screenshot", args: {} };
     case "basemap": return { op: "set_basemap", args: { basemap: input.value } };
     case "login": return { op: "login", args: input };
@@ -51,7 +68,7 @@ export function toOp(command) {
   }
 }
 
-const FLAGS = { graphics: ["title", "renderer", "labels"], login: ["portal-url", "client-id", "redirect-uri"] };
+const FLAGS = { graphics: ["title", "renderer", "labels"], "update-layer": ["title", "renderer", "labels", "filter", "opacity", "visible"], login: ["portal-url", "client-id", "redirect-uri"] };
 const LOGIN_WAIT = 5 * 60_000;
 
 // OAuth 2.0 authorization code with PKCE (public client, no secret) and a loopback redirect.
