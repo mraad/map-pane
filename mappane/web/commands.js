@@ -6,8 +6,7 @@ update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <
 go_to location <country | state | city | zipcode | address>
 go_to coordinate <latitude> <longitude> [zoom]
 screenshot <file.png>
-basemaps
-basemap <id>
+basemap [list | <id>]
 login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]
 map-service <url>
 feature-service <url>
@@ -17,10 +16,11 @@ graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>]
 save-webmap <title>`;
 export const COMMANDS = HELP.split("\n").map((line) => line.split(" ")[0]);
 
-// All 2D basemap ids the SDK accepts. Legacy ids need no sign-in.
+// All 2D basemap ids the SDK accepts. Legacy ids need no sign-in; keyless ids are Esri raster tiles (app.js KEYLESS).
 // Style ids come from https://basemapstyles-api.arcgis.com/arcgis/rest/services/styles/v2/styles/self
 // and need a token (bin/map-command login) or an API key.
 export const BASEMAPS = Object.freeze({
+  keyless: Object.freeze(["dark-gray", "light-gray", "imagery", "topo", "streets"]),
   legacy: Object.freeze(["satellite", "hybrid", "oceans", "osm", "terrain", "dark-gray", "dark-gray-vector", "gray",
     "gray-vector", "streets", "streets-vector", "streets-night-vector", "streets-navigation-vector", "topo", "topo-vector",
     "streets-relief-vector"]),
@@ -46,6 +46,9 @@ export const BASEMAPS = Object.freeze({
   "open/streets-relief/base", "open/osm-style", "open/osm-style-relief", "open/osm-style-relief/base"
   ]),
 });
+
+// A portal basemap is its web map item id, as `basemap list` prints it after a sign-in.
+export const ITEM_ID = /^[0-9a-f]{32}$/i;
 
 export function httpUrl(value) {
   const url = new URL(value);
@@ -101,7 +104,7 @@ export function validateGoTo(input) {
 
 export function parseCommand(text) {
   const [, command, value = ""] = text.trim().match(/^(\S+)(?:\s+([\s\S]*))?$/) ?? [];
-  if (["extent", "clear", "basemaps", "login"].includes(command) && !value) return { command };
+  if (["extent", "clear", "basemap", "login"].includes(command) && !value) return { command };
   if (command === "zoom" && !/\s/.test(value)) return value ? { command, value } : { command };
   if (command === "go_to") {
     const [, mode, target = ""] = value.match(/^(?:--)?(location|coordinate)(?:\s+([\s\S]+))?$/) ?? [];
@@ -117,9 +120,10 @@ export function parseCommand(text) {
   if (["remove", "update-layer"].includes(command) && value.trim()) return { command, layer: value.trim() };
   if (command === "screenshot" && value) return { command, file: value };
   if (command === "save-webmap" && value.trim()) return { command, title: value.trim() };
+  if (command === "basemap" && value === "list") return { command, list: true };
   if (command === "basemap" && value && !/\s/.test(value)) {
-    if (!BASEMAPS.legacy.includes(value) && !BASEMAPS.styles.includes(value)) {
-      throw new Error(`Unknown basemap: ${value}. Run bin/map-command basemaps`);
+    if (!Object.values(BASEMAPS).some((ids) => ids.includes(value)) && !ITEM_ID.test(value)) {
+      throw new Error(`Unknown basemap: ${value}. Run bin/map-command basemap list`);
     }
     return { command, value };
   }

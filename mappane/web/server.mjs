@@ -47,7 +47,7 @@ const msFromEnv = (name, fallback) => (Number(process.env[name]) > 0 ? Number(pr
 const DEFAULT_TIMEOUT_MS = msFromEnv('MAP_PANE_TIMEOUT_MS', 15000)
 // Commands that do not change what the map holds: never logged, never replayed.
 // login carries a token: it never reaches the log or the disk (a reload needs a new login).
-const READ_ONLY = new Set(['go_to', 'screenshot', 'extent', 'zoom', 'login', 'save_webmap'])
+const READ_ONLY = new Set(['go_to', 'screenshot', 'extent', 'zoom', 'login', 'save_webmap', 'get_basemap', 'list_basemaps'])
 
 // The mod passes its session id: the map of each session is saved in its own folder.
 const SESSION = process.env.MAP_PANE_SESSION?.replace(/[^\w-]/g, '')

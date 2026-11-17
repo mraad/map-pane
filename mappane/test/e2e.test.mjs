@@ -113,6 +113,14 @@ test("shell commands return the current extent and change basemap", async () => 
   assert.equal(await evaluate("view.map.basemap.id"), "osm");
   await assert.rejects(command({ command: "basemap", value: "not-a-basemap" }), /unknown basemap/);
   assert.equal(await evaluate("view.map.basemap.id"), "osm");
+  assert.equal((await command({ command: "basemap" })).id, "osm");
+  // No sign-in yet: no styles and no portal gallery.
+  const list = await command({ command: "basemap", list: true });
+  assert.equal(list.current.id, "osm");
+  assert.equal(list.signedIn, false);
+  assert.ok(list.legacy.includes("osm") && list.keyless.includes("imagery"));
+  assert.equal(list.styles, undefined);
+  assert.equal(list.portal, undefined);
 });
 
 test("mixed-geometry GeoJSON stays a GraphicsLayer with properties", async () => {

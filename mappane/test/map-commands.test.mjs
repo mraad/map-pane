@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runMapCommand } from "../web/map-commands.js";
+import { portalBasemaps, runMapCommand } from "../web/map-commands.js";
+
+test("portal basemaps need a sign-in", async () => {
+  assert.equal(await portalBasemaps(), undefined);
+});
 
 test("go_to takes only a location here and validates it", async () => {
   const view = { goTo: async () => assert.fail("must not move"), extent: { toJSON: () => ({}) } };
@@ -94,4 +98,23 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   assert.equal(layerDefinition.geometryType, "esriGeometryPoint");
   assert.equal(layerDefinition.definitionExpression, "__oid > 1");
   assert.deepEqual(featureSet.features, [{ geometry: { x: 1, y: 2 }, attributes: { __oid: 1 } }]);
+});
+
+// Runs after the save-webmap test signed in: the sign-in is module state.
+test("after a sign-in, portal basemaps list the portal's gallery by item id", async (t) => {
+  const previous = globalThis.$arcgis;
+  t.after(() => { globalThis.$arcgis = previous; });
+  let portalUrl;
+  globalThis.$arcgis = { import: async (name) => {
+    if (name.endsWith("IdentityManager.js")) return { registerToken: () => {} };
+    assert.ok(name.endsWith("Portal.js"));
+    return class {
+      constructor({ url }) { portalUrl = url; }
+      async load() {}
+      async fetchBasemaps() { return [{ title: "Topographic", portalItem: { id: "a".repeat(32) } }]; }
+    };
+  } };
+  await runMapCommand({}, { command: "login", portalUrl: "https://portal.example.com/portal/", clientId: "c", token: "t", expires: Date.now() + 3_600_000, userId: "u" });
+  assert.deepEqual(await portalBasemaps(), [{ id: "a".repeat(32), title: "Topographic" }]);
+  assert.equal(portalUrl, "https://portal.example.com/portal");
 });

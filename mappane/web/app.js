@@ -1,5 +1,6 @@
 // The map page: runs the bridge's commands one at a time (SSE /events -> POST /ack). No build step.
-import { runMapCommand } from './map-commands.js'
+import { portalBasemaps, portalUrl, runMapCommand } from './map-commands.js'
+import { BASEMAPS, ITEM_ID } from './commands.js'
 import { toGraphics } from './geojson.js'
 
 const [Graphic, GraphicsLayer, reactiveUtils, IdentityManager] = await Promise.all(
@@ -134,6 +135,9 @@ async function extentOf(layer) {
   return layer.fullExtent
 }
 
+// A style basemap keeps its id in style, a portal basemap in its item; a legacy or keyless one in id.
+const currentBasemap = () => ({ id: map.basemap?.style?.id ?? map.basemap?.portalItem?.id ?? map.basemap?.id, title: map.basemap?.title })
+
 function findLayer(key) {
   const layer = map.findLayerById(key) ?? map.layers.find(l => l.title === key)
   if (!layer) throw new Error(`no layer with id or title "${key}"`)
@@ -217,14 +221,17 @@ const ops = {
     const tiles = Object.hasOwn(KEYLESS, basemap) ? KEYLESS[basemap] : undefined
     // Without a token the SDK waits for an interactive sign-in that a pane cannot show: fail now instead.
     if (!tiles && basemap.includes('/') && !apiKey && !IdentityManager.credentials.length) {
-      throw new Error(`"${basemap}" is a basemap style and needs a sign-in (bin/map-command login) or the page opened with ?apiKey=. Without one use: osm, ${Object.keys(KEYLESS).join(', ')}, or another legacy id from bin/map-command basemaps.`)
+      throw new Error(`"${basemap}" is a basemap style and needs a sign-in (bin/map-command login) or the page opened with ?apiKey=. Without one use: osm, ${Object.keys(KEYLESS).join(', ')}, or another legacy id from bin/map-command basemap list.`)
     }
     const previous = map.basemap
     try {
       if (tiles) {
         const [Basemap, TileLayer] = await Promise.all([$arcgis.import('@arcgis/core/Basemap.js'), use('TileLayer')])
         const [base, labels] = tiles.map(name => name && new TileLayer({ url: `${TILES}/${name}/MapServer` }))
-        map.basemap = new Basemap({ id: basemap, baseLayers: [base], referenceLayers: labels ? [labels] : [] })
+        map.basemap = new Basemap({ id: basemap, title: basemap, baseLayers: [base], referenceLayers: labels ? [labels] : [] })
+      } else if (ITEM_ID.test(basemap)) {
+        const Basemap = await $arcgis.import('@arcgis/core/Basemap.js')
+        map.basemap = new Basemap({ portalItem: { id: basemap, ...(portalUrl() && { portal: { url: portalUrl() } }) } })
       } else {
         map.basemap = basemap
       }
@@ -240,6 +247,19 @@ const ops = {
       throw err
     }
     return { basemap }
+  },
+
+  async get_basemap() { return currentBasemap() },
+
+  // Styles need a sign-in or an API key; the portal's gallery needs a sign-in.
+  async list_basemaps() {
+    const portal = await portalBasemaps()
+    const styles = Boolean(apiKey || IdentityManager.credentials.length)
+    return {
+      current: currentBasemap(), signedIn: Boolean(portalUrl()),
+      keyless: BASEMAPS.keyless, legacy: BASEMAPS.legacy,
+      ...(styles && { styles: BASEMAPS.styles }), ...(portal && { portal }),
+    }
   },
 
   // location: a place or address, found by the World Geocoding service.
