@@ -108,6 +108,8 @@ let lastLogin
 // /cmd calls waiting for a first page (the mod just opened the pane): resolved when a page connects.
 const tabWaiters = new Set()
 const pending = new Map()
+// Ids of pending commands a page already got in its replay: that page may show them, even after it disconnects.
+const replayed = new Set()
 let state = { layers: [], ...saved.view }
 // Local files the mod asked to show, by key and by path.
 const files = new Map()
@@ -274,7 +276,11 @@ const handler = async (req, res) => {
       if (!isKnown) sse(res, { op: 'reset' }, false)
       // Before the log: a logged basemap style or portal layer needs the token to replay.
       if (!isKnown && lastLogin) sse(res, { op: 'login', args: lastLogin, replay: true }, false)
-      for (const entry of log) if (!isKnown || entry.id > Number(lastN)) sse(res, toPage(entry, true))
+      for (const entry of log) {
+        if (isKnown && entry.id <= Number(lastN)) continue
+        sse(res, toPage(entry, true))
+        if (pending.has(entry.id)) replayed.add(entry.id)
+      }
       if (!isKnown && state.center) sse(res, { op: 'go_to', args: { center: state.center, zoom: state.zoom }, replay: true }, false)
       tabs.add(res)
       tabIds.set(res, nextTab++)
@@ -414,8 +420,10 @@ const handler = async (req, res) => {
         const message = toPage(entry, false)
         for (const tab of targets) sse(tab, { ...message, tab: tabIds.get(tab) })
       })
-      // A timed-out command may still finish on a page: keep it, so later pages replay the same map.
-      if (isLogged && !ack.ok && !ack.timedOut) {
+      // A timed-out command may still finish on a page, and a replayed one may be on a page already:
+      // keep both, so later pages replay the same map.
+      const wasReplayed = replayed.delete(entry.id)
+      if (isLogged && !ack.ok && !ack.timedOut && !wasReplayed) {
         log = log.filter(e => e !== entry)
         forget(entry.args.path)
       }

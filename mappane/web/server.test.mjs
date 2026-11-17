@@ -311,6 +311,26 @@ test('a page that replayed a pending command keeps it in the log when the page i
   assert.ok(later.messages.some(m => m.replay && m.args?.layer === 'Replayed'))
 })
 
+test('a pending command a page replayed stays in the log after that page disconnects and the target closes', async t => {
+  const first = page({ answer: () => undefined })
+  t.after(() => first.close())
+  await first.ready
+  const pending = cmd('add_graphic', { geometry: { type: 'Point', coordinates: [9, 9] }, layer: 'Dropped joiner' })
+  await first.until(() => first.messages.some(m => m.args?.layer === 'Dropped joiner'))
+  const joined = page()
+  await joined.until(() => joined.messages.some(m => m.replay && m.args?.layer === 'Dropped joiner'))
+  joined.close()
+  await sleep(50) // the bridge sees the close
+  first.close()
+  const res = await pending
+  assert.equal(res.status, 422)
+  assert.match(res.error, /target map page closed/)
+  const later = page()
+  t.after(() => later.close())
+  await later.until(() => later.messages.some(m => m.args?.layer === 'Dropped joiner'))
+  assert.ok(later.messages.some(m => m.replay && m.args?.layer === 'Dropped joiner'))
+})
+
 test('a command no page answered in time stays in the log: it may still finish, so later pages replay it', async () => {
   const silent = page({ answer: () => undefined })
   await silent.until(() => silent.messages.length)
