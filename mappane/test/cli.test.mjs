@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
 import { request, toOp } from "../cli/command.mjs";
+import { BASEMAPS } from "../web/commands.js";
 
 const ROOT = join(import.meta.dirname, "..");
 const tmp = mkdtempSync("/tmp/map-command-test-");
@@ -132,6 +133,8 @@ test("CLI verbs become bridge ops; results and page errors come back", { timeout
     [["go_to", "location", "380 New York St, Redlands, CA 92373"], { op: "go_to", args: { location: "380 New York St, Redlands, CA 92373" } }],
     [["go_to", "coordinate", "30.2672", "-97.7431", "12"], { op: "go_to", args: { center: [-97.7431, 30.2672], zoom: 12 } }],
     [["basemap", "satellite"], { op: "set_basemap", args: { basemap: "satellite" } }],
+    [["basemap"], { op: "get_basemap", args: {} }],
+    [["basemap", "list"], { op: "list_basemaps", args: {} }],
     [["feature-service", "https://example.com/FeatureServer"], { op: "add_layer", args: { type: "feature", url: "https://example.com/FeatureServer", zoomTo: false } }],
     [["graphics", file, "--title", "Points"], { op: "graphics", args: { data, title: "Points" } }],
     [["graphics", "-", "--title", "Piped"], { op: "graphics", args: { data, title: "Piped" } }, JSON.stringify(data)],
@@ -253,6 +256,18 @@ test("CLI login fails clearly without a client ID", { timeout: 10_000 }, async (
   await map.reply(await map.next(), {});
   assert.equal(await run.exited, 1);
   assert.match(run.err(), /--client-id or set MAP_PANE_CLIENT_ID/);
+});
+
+test("basemap list with no running map prints the built-in ids and says why", async () => {
+  const run = cli(["basemap", "list"], { env: { TMPDIR: mkdtempSync(join(tmp, "no-map-")) } });
+  assert.equal(await run.exited, 0, run.err());
+  assert.deepEqual(JSON.parse(run.out()), JSON.parse(JSON.stringify(BASEMAPS)));
+  assert.match(run.err(), /No running map: the sign-in status is unknown/);
+  const explicit = cli(["basemap", "list"], { env: { MAP_PANE_SOCKET: join(tmp, "missing.sock") } });
+  assert.equal(await explicit.exited, 0, explicit.err());
+  const current = cli(["basemap"], { env: { TMPDIR: mkdtempSync(join(tmp, "no-map-")) } });
+  assert.equal(await current.exited, 1);
+  assert.match(current.err(), /No running map found/);
 });
 
 test("update-layer needs one valid change", () => {

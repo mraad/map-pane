@@ -56,7 +56,9 @@ export function toOp(command) {
       return { op: "update_layer", args: JSON.parse(JSON.stringify(args)) };
     }
     case "screenshot": return { op: "screenshot", args: {} };
-    case "basemap": return { op: "set_basemap", args: { basemap: input.value } };
+    case "basemap":
+      if (input.list) return { op: "list_basemaps", args: {} };
+      return input.value ? { op: "set_basemap", args: { basemap: input.value } } : { op: "get_basemap", args: {} };
     case "login": return { op: "login", args: input };
     case "save-webmap": return { op: "save_webmap", args: { title: input.title } };
     case "map-service": return { op: "add_layer", args: { type: "map-image", url: input.url, zoomTo: false } };
@@ -151,10 +153,6 @@ async function main() {
   // The page cannot write files: the CLI keeps the screenshot path and writes the PNG itself.
   // login flags configure the sign-in here; they are not sent to the page.
   const { file, ...command } = name === "--info" ? {} : { ...parseCommand(`${name} ${text}`), ...(name === "login" ? {} : options) };
-  if (command.command === "basemaps") {
-    console.log(JSON.stringify(BASEMAPS, null, 2));
-    return;
-  }
   let sockets = [process.env.MAP_PANE_SOCKET];
   if (!sockets[0]) {
     const entries = await readdir(tmpdir());
@@ -173,7 +171,7 @@ async function main() {
         if (process.env.MAP_PANE_SOCKET || !["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
       }
     }
-    throw new Error("No running map found. Start bin/map-pane --split first (or /map in Claude Code).");
+    throw Object.assign(new Error("No running map found. Start bin/map-pane --split first (or /map in Claude Code)."), { noMap: true });
   };
   if (name === "--info") {
     console.log(JSON.stringify(await send("/api/info"), null, 2));
@@ -190,6 +188,16 @@ async function main() {
       clientId: options["client-id"] || process.env.MAP_PANE_CLIENT_ID,
       redirectUri: options["redirect-uri"] || process.env.MAP_PANE_REDIRECT_URI || "http://127.0.0.1:8766/",
     }));
+  }
+  // Sign-in status lives in the map page: with no map, list the built-in ids only.
+  if (command.list) {
+    const reply = await send("/cmd", toOp(command)).catch((error) => {
+      if (!error.noMap && !["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
+      console.error("No running map: the sign-in status is unknown. Styles need login; portal basemaps need a running map.");
+      return { result: BASEMAPS };
+    });
+    console.log(JSON.stringify(reply.result, null, 2));
+    return;
   }
   let { result } = await send("/cmd", toOp(command));
   // The bridge saves the PNG in its data folder: copy it to the file asked for.

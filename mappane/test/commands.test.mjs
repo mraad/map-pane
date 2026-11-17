@@ -13,8 +13,11 @@ test("command parser accepts map operations and rejects invalid commands and URL
   assert.deepEqual(parseCommand("screenshot map.png"), { command: "screenshot", file: "map.png" });
   assert.deepEqual(parseCommand("basemap osm"), { command: "basemap", value: "osm" });
   assert.deepEqual(parseCommand("basemap arcgis/dark-gray"), { command: "basemap", value: "arcgis/dark-gray" });
-  assert.throws(() => parseCommand("basemap not-a-basemap"), /Unknown basemap: not-a-basemap\. Run bin\/map-command basemaps/);
-  assert.deepEqual(parseCommand("basemaps"), { command: "basemaps" });
+  assert.deepEqual(parseCommand("basemap imagery"), { command: "basemap", value: "imagery" });
+  assert.deepEqual(parseCommand("basemap 0123456789abcdef0123456789ABCDEF"), { command: "basemap", value: "0123456789abcdef0123456789ABCDEF" });
+  assert.throws(() => parseCommand("basemap not-a-basemap"), /Unknown basemap: not-a-basemap\. Run bin\/map-command basemap list/);
+  assert.deepEqual(parseCommand("basemap"), { command: "basemap" });
+  assert.deepEqual(parseCommand("basemap list"), { command: "basemap", list: true });
   assert.deepEqual(parseCommand("login"), { command: "login" });
   assert.deepEqual(parseCommand("save-webmap  North Sea wells "), { command: "save-webmap", title: "North Sea wells" });
   assert.equal(new Set([...BASEMAPS.legacy, ...BASEMAPS.styles]).size, BASEMAPS.legacy.length + BASEMAPS.styles.length);
@@ -26,7 +29,7 @@ test("command parser accepts map operations and rejects invalid commands and URL
     command: "geopackage", url: "https://example.com/data.gpkg", table: "my table",
   });
   assert.deepEqual(parseCommand('graphics {"type":"Point","coordinates":[0,1]}').data.coordinates, [0, 1]);
-  for (const text of ["", "extent extra", "clear all", "zoom a b", "remove", "remove  ", "update-layer", "screenshot", "basemaps extra", "login extra", "save-webmap", "save-webmap  ", "basemap", "geojson file:///etc/passwd", "geojson javascript:alert(1)", "geojson https://user:password@example.com", "nope", "graphics not-json"]) {
+  for (const text of ["", "extent extra", "clear all", "zoom a b", "remove", "remove  ", "update-layer", "screenshot", "basemaps", "basemap list extra", "login extra", "save-webmap", "save-webmap  ", "geojson file:///etc/passwd", "geojson javascript:alert(1)", "geojson https://user:password@example.com", "nope", "graphics not-json"]) {
     assert.throws(() => parseCommand(text));
   }
 });

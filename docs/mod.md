@@ -93,7 +93,7 @@ Renderers, symbols and label classes use SDK autocast JSON. Example renderer:
 
 ## 6. Basemaps
 
-- No key or sign-in: `osm`, `dark-gray`, `light-gray`, `imagery`, `topo`, `streets` (raster tiles), and the legacy ids that `bin/map-command basemaps` lists, for example `satellite` or `gray-vector`.
+- No key or sign-in: `osm`, `dark-gray`, `light-gray`, `imagery`, `topo`, `streets` (raster tiles), and the legacy ids that `bin/map-command basemap list` lists, for example `satellite` or `gray-vector`.
 - Basemap styles, for example `arcgis/navigation`: these need a sign-in, or the page opened with `?apiKey=<key>`. Without one, `set_basemap` refuses them at once.
 - A basemap that fails to load leaves the previous basemap in place.
 

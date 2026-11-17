@@ -128,6 +128,16 @@ async function saveWebMap(view, { title }) {
   };
 }
 
+// The signed-in portal's basemap gallery as {id, title}, or undefined with no sign-in.
+export async function portalBasemaps() {
+  if (!signedInPortal) return undefined;
+  const Portal = await $arcgis.import("@arcgis/core/portal/Portal.js");
+  const portal = new Portal({ url: signedInPortal, authMode: "immediate" });
+  await portal.load();
+  return (await portal.fetchBasemaps()).map((basemap) => ({ id: basemap.portalItem?.id, title: basemap.title }));
+}
+export const portalUrl = () => signedInPortal;
+
 // The ops that app.js delegates here: go_to location, extent, login, save-webmap, graphics.
 // The bridge times commands out, so these take no AbortSignal.
 export async function runMapCommand(view, input) {

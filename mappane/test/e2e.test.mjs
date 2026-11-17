@@ -113,6 +113,14 @@ test("shell commands return the current extent and change basemap", async () => 
   assert.equal(await evaluate("view.map.basemap.id"), "osm");
   await assert.rejects(command({ command: "basemap", value: "not-a-basemap" }), /unknown basemap/);
   assert.equal(await evaluate("view.map.basemap.id"), "osm");
+  assert.equal((await command({ command: "basemap" })).id, "osm");
+  // No sign-in yet: no styles and no portal gallery.
+  const list = await command({ command: "basemap", list: true });
+  assert.equal(list.current.id, "osm");
+  assert.equal(list.signedIn, false);
+  assert.ok(list.legacy.includes("osm") && list.keyless.includes("imagery"));
+  assert.equal(list.styles, undefined);
+  assert.equal(list.portal, undefined);
 });
 
 test("mixed-geometry GeoJSON stays a GraphicsLayer with properties", async () => {
@@ -292,6 +300,12 @@ test("login registers the token with the SDK for the portal", async () => {
   })()`);
   assert.deepEqual(credential, { token: "T1", userId: "u1" });
   await assert.rejects(command({ command: "login", portalUrl, clientId: "cid" }), /login needs/);
+  // Signed in, but this portal does not exist: the list keeps the built-in ids and reports the gallery error.
+  const list = await command({ command: "basemap", list: true });
+  assert.equal(list.signedIn, true);
+  assert.ok(list.legacy.includes("osm") && list.styles.includes("arcgis/nova"));
+  assert.equal(list.portal, undefined);
+  assert.equal(typeof list.portalError, "string");
 });
 
 test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {

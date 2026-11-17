@@ -1,7 +1,7 @@
 ---
 name: map-pane
 description: Open, control and close a live web map (Ghostty split, browser, or the Claude Code mod's map) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove or restyle a layer, clear the map, save a web map, or take a screenshot of a running map.
-argument-hint: "open | close | extent | basemaps | basemap <id> | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id] | remove <layer-id | title> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title>"
+argument-hint: "open | close | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id] | remove <layer-id | title> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title>"
 ---
 
 # Map pane
@@ -47,9 +47,11 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 
 | Request | Command |
 |---|---|
-| List basemaps (no running map needed) | `scripts/map-command basemaps` |
+| Show the current basemap | `scripts/map-command basemap` |
+| List basemaps (styles and portal basemaps only after `login`) | `scripts/map-command basemap list` |
 | Set a basemap | `scripts/map-command basemap osm` |
 | Set a basemap style (after `login`) | `scripts/map-command basemap arcgis/dark-gray` |
+| Set a portal basemap (item id from `basemap list`) | `scripts/map-command basemap <item-id>` |
 | Sign in to an ArcGIS portal | `scripts/map-command login [--portal-url URL] [--client-id ID] [--redirect-uri URI]` |
 | Read the current extent | `scripts/map-command extent` |
 | Go to a country, state, city, ZIP code or address | `scripts/map-command go_to location 'Austin, Texas'` |
