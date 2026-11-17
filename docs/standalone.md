@@ -66,6 +66,7 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `clear` | Removes all layers. The basemap goes back to the start basemap. The legend hides. |
 | `zoom [layer-id]` | Shows all layers, or one layer. |
 | `remove <layer-id or title>` | Removes one layer. The other layers and the basemap stay. |
+| `reorder <layer-id or title> <top \| bottom \| index>` | Moves one layer in the drawing order. Index 0 is the bottom layer. The answer lists the layer ids from bottom to top. |
 | `update-layer <layer-id or title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true\|false]` | Changes one layer without reloading its data. Give at least one option. `--labels` turns labels on. `--filter` sets the SQL where clause (feature, GeoJSON, CSV and GeoParquet layers). |
 | `go_to location <place or address>` | Finds a country, state, city, ZIP code or address with the World Geocoding service. Prints the match, the score and the extent. |
 | `go_to coordinate <lat> <lon> [zoom]` | Centers on WGS84 degrees, latitude first. Keeps the zoom unless you give one (0 to 23). |

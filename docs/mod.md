@@ -78,6 +78,7 @@ All tools have the prefix `mcp__mappane__`.
 | `add_geopackage` | `url` or `path`, `table` | Adds the vector tables of a GeoPackage, one layer each. A table with one geometry type gets a legend entry and popups. |
 | `update_layer` | `id` (id or title), `title`, `renderer`, `definitionExpression`, `labelingInfo`, `opacity`, `visible` | Changes a layer in place. A property that the layer does not have is an error. |
 | `remove_layer` | `id` | Removes a layer. |
+| `reorder_layer` | `id`, `index` (`top`, `bottom`, or 0 for the bottom) | Moves a layer in the drawing order. |
 | `clear_graphics` | `layer` | Removes the graphics of one graphics layer, or of all of them. |
 | `go_to` | `location`, or `center` and `zoom`, or `layerId` | Moves the map. `location` is a place or an address. The World Geocoding service finds it. The answer has the matched address and score. |
 | `set_basemap` | `basemap` | Changes the basemap. See [Basemaps](#6-basemaps). |
