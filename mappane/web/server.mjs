@@ -195,6 +195,8 @@ let HOST = `127.0.0.1:${PORT}`
 // only its owner can connect (mode 0600).
 const TOKEN = process.env.MAP_PANE_TOKEN
 const SOCKET = commandSocket(process.pid)
+// Advertised (SOCKET line, /api/info) only once the socket listens: the CLI has no other way in.
+let socketReady = false
 const CONTROL = new Set(['/cmd', '/input', '/clear'])
 
 // Inline GeoJSON becomes a file in the data folder, so the log stays small and holds a path like any other.
@@ -242,7 +244,7 @@ const handler = async (req, res) => {
     }
     if (req.method === 'GET' && req.url === '/api/start') return json(res, 200, START)
     // bin/map-pane asks a running bridge where its page is.
-    if (req.method === 'GET' && req.url === '/api/info') return json(res, 200, { url: `http://${HOST}/`, pid: process.pid, socket: SOCKET })
+    if (req.method === 'GET' && req.url === '/api/info') return json(res, 200, { url: `http://${HOST}/`, pid: process.pid, socket: socketReady ? SOCKET : null })
     if (req.method === 'GET' && req.url === '/events') {
       res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -375,7 +377,13 @@ const handler = async (req, res) => {
         })
         const timer = setTimeout(
           // Timed out: a page may still finish it, so it stays in the log even when another page failed.
-          () => settle({ ...(firstError ?? { ok: false, error: `the map did not answer in ${timeout} ms; it may still finish, so call map_state before retrying` }), timedOut: true }),
+          () => settle({
+            ok: false,
+            timedOut: true,
+            error: firstError
+              ? `${firstError.error}; another map page did not answer in ${timeout} ms and may still finish it, so call map_state before retrying`
+              : `the map did not answer in ${timeout} ms; it may still finish, so call map_state before retrying`,
+          }),
           timeout,
         )
         const message = toPage(entry, false)
@@ -393,7 +401,7 @@ const handler = async (req, res) => {
         writeFileSync(path, Buffer.from(result.dataUrl.split(',')[1] ?? '', 'base64'))
         result = { path, width: result.width, height: result.height }
       }
-      return json(res, ack.ok ? 200 : 422, { ok: ack.ok, error: ack.error, result, state: snapshot() })
+      return json(res, ack.ok ? 200 : 422, { ok: ack.ok, error: ack.error, ...(ack.timedOut ? { timedOut: true } : {}), result, state: snapshot() })
     }
     json(res, 404, { ok: false, error: 'not found' })
   } catch (err) {
@@ -405,9 +413,14 @@ const server = createServer(handler)
 // The CLI's door: same handler, owner-only socket, removed on exit.
 const commands = createServer(handler)
 commands.on('error', err => console.error(`command socket: ${err.message}`))
-if (START) {
+// Listens after the TCP port, so `bridge:` stays the first stdout line (the launcher and tests read it).
+function listenSocket() {
   rmSync(SOCKET, { force: true }) // left by a killed bridge with the same pid
-  commands.listen(SOCKET, () => chmodSync(SOCKET, 0o600))
+  commands.listen(SOCKET, () => {
+    chmodSync(SOCKET, 0o600)
+    socketReady = true
+    console.log(`SOCKET ${SOCKET}`)
+  })
   process.on('exit', () => rmSync(SOCKET, { force: true }))
 }
 
@@ -425,8 +438,8 @@ if (START) server.listen(PORT, '127.0.0.1', () => {
   HOST = `127.0.0.1:${server.address().port}`
   removeOldSessions()
   console.log(`bridge: http://${HOST}/`)
-  console.log(`SOCKET ${SOCKET}`)
   publish()
+  listenSocket()
 })
 // A closed pane stops posting: free Chrome's 1-2 GB. Reopening the pane posts its size and starts it again.
 setInterval(

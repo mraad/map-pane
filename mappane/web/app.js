@@ -140,7 +140,9 @@ async function extentOf(layer) {
   }
   if (layer.queryExtent) {
     const { count, extent } = await layer.queryExtent()
-    if (count > 0 && extent) return extent
+    // The query honours the layer's filter: no match means nothing to show, not the whole service.
+    if (count === 0) throw new Error(`layer "${layer.title ?? layer.id}" has no features to go to (check its filter)`)
+    if (extent) return extent
   }
   if (!layer.fullExtent) throw new Error(`layer "${layer.title ?? layer.id}" has no extent to go to`)
   return layer.fullExtent
