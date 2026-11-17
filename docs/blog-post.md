@@ -53,7 +53,7 @@ Type `/map` to open the map in the side pane. Then ask Claude in plain language:
 
 The mod gives Claude twelve tools with the prefix `mcp__mappane__`. These include `add_layer`, `update_layer`, `add_geopackage`, `go_to` and `save_webmap`. Renderers, symbols and labels use the SDK's autocast JSON, so Claude writes the same JSON that you find in the SDK documentation.
 
-The mod saves the map for each Claude Code session in `~/.claude/map-pane/sessions/`. When you resume a session, the map comes back.
+The mod saves the map for each Claude Code session in `~/.claude/map-pane/sessions/`. When you resume a session within 30 days, the map comes back. A saved map that nobody used for 30 days is deleted.
 
 ## Use it standalone with Codex, Pi or Claude
 
@@ -99,11 +99,11 @@ The bridge listens only on `127.0.0.1`. That is not enough by itself, because a 
 
 - It accepts only the `Host: 127.0.0.1:<port>` header. This stops DNS rebinding.
 - It refuses a request from a foreign `Origin`. This stops a cross-site POST.
-- The control endpoints (`/cmd`, `/input` and `/clear`) need the `x-map-pane-token` header. The mod makes a new random token each time it loads.
+- When `MAP_PANE_TOKEN` is set, the control endpoints (`/cmd`, `/input` and `/clear`) need the `x-map-pane-token` header. The mod sets a new random token each time it loads. A standalone bridge has no token by default, so its control endpoints are open on TCP.
 
 The Unix socket skips these checks. The socket file has mode 0600, so only its owner can connect to it.
 
-There is one accepted limit. The map page cannot send a token on its SSE connection, so `/events` is open on TCP. Another user account on the same computer could read the map. I assume a single-user machine, and the docs say so.
+There is one accepted limit. The map page cannot send a token on its SSE connection, so `/events` is open on TCP. Another user account on the same computer could read the map. After a `login`, that account also gets the portal sign-in token, because the bridge sends the last login to each new page. Without the mod's token, it could also send commands. I assume a single-user machine, and the docs say so. Do not run the map on a shared computer.
 
 ## Things that surprised me
 

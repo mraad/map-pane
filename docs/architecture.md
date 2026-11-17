@@ -59,7 +59,7 @@ Local feature collections keep their layer filters when saved. Layer updates val
 - The Unix socket skips both checks: only its owner can connect (mode 0600).
 - File URLs use random UUID keys. Only files registered by a command are served.
 - The `login` token stays in page and bridge memory, never in the log or on disk. The bridge replays the last login to each new page, so a logged basemap style or portal layer replays.
-- Single-user machine assumed: `GET /events`, `/state` and `/files` need no token (browsers cannot send one), so another local user account could read the map and its served files over TCP. Only the Unix socket is owner-only.
+- Single-user machine assumed: `GET /events`, `/state` and `/files` need no token (browsers cannot send one), so another local user account could read the map and its served files over TCP. After a `login`, a new `/events` connection also gets the last login, token included. Only the Unix socket is owner-only.
 
 ## Persistence
 
