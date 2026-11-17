@@ -1,0 +1,20 @@
+{
+  "name": "map-pane",
+  "version": "0.3.0",
+  "description": "Drive a live web map (built on the ArcGIS Maps SDK for JavaScript) from the shell: geocode places, add GeoJSON, GeoPackage and services, style and label them, change basemaps, take screenshots. Shows the map in a Ghostty split.",
+  "author": { "name": "mraad", "url": "https://github.com/mraad" },
+  "homepage": "https://github.com/mraad/map-pane",
+  "repository": "https://github.com/mraad/map-pane",
+  "license": "MIT",
+  "keywords": ["map", "gis", "geojson", "ghostty"],
+  "skills": "./.agents/skills/",
+  "interface": {
+    "displayName": "Map pane",
+    "shortDescription": "A live web map in a terminal split",
+    "developerName": "mraad",
+    "category": "Productivity",
+    "capabilities": ["Instructions"],
+    "websiteURL": "https://github.com/mraad/map-pane",
+    "defaultPrompt": ["Open the map and go to Austin, Texas.", "Add this GeoJSON to the map with a legend."]
+  }
+}

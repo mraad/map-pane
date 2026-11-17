@@ -1,0 +1,12 @@
+{
+  "name": "map-pane",
+  "interface": { "displayName": "Map pane" },
+  "plugins": [
+    {
+      "name": "map-pane",
+      "source": { "source": "local", "path": "./" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}
