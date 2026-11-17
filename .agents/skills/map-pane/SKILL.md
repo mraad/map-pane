@@ -1,7 +1,7 @@
 ---
 name: map-pane
 description: Open, control and close a live web map (Ghostty split, browser, or the Claude Code mod's map) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove or restyle a layer, clear the map, save a web map, or take a screenshot of a running map.
-argument-hint: "open | close | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title>"
+argument-hint: "open | close | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id | title] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title>"
 ---
 
 # Map pane
@@ -61,7 +61,7 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 | Load GeoJSON from a URL | `scripts/map-command geojson URL` |
 | Load a GeoPackage, or one table | `scripts/map-command geopackage URL ['table name']` |
 | Add GeoJSON (file, `-` for stdin, or inline) | `scripts/map-command graphics ./f.geojson --title 'Name' [--renderer JSON] [--labels JSON]` |
-| Zoom to all layers, or one | `scripts/map-command zoom [LAYER_ID]` |
+| Zoom to all layers, or one | `scripts/map-command zoom [LAYER_ID]` (id or title) |
 | Remove one layer (id or title) | `scripts/map-command remove LAYER_ID` |
 | Move a layer up or down the drawing order (0 is the bottom) | `scripts/map-command reorder LAYER_ID top\|bottom\|INDEX` |
 | Restyle, filter, rename, fade or hide a layer (no reload) | `scripts/map-command update-layer LAYER_ID [--title NAME] [--renderer JSON] [--labels JSON] [--filter SQL] [--opacity 0-1] [--visible true\|false]` |

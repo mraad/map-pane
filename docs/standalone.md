@@ -64,7 +64,7 @@ Each command prints JSON. A failed command prints an error and exits with status
 |---|---|
 | `extent` | Prints the bounds and spatial reference of the view. |
 | `clear` | Removes all layers. The basemap goes back to the start basemap. The legend hides. |
-| `zoom [layer-id]` | Shows all layers, or one layer. |
+| `zoom [layer-id \| title]` | Shows all layers, or one layer. |
 | `remove <layer-id or title>` | Removes one layer. The other layers and the basemap stay. |
 | `reorder <layer-id or title> <top \| bottom \| index>` | Moves one layer in the drawing order. Index 0 is the bottom layer. The answer lists the layer ids from bottom to top. |
 | `update-layer <layer-id or title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true\|false]` | Changes one layer without reloading its data. Give at least one option. `--labels` turns labels on. `--filter` sets the SQL where clause (feature, GeoJSON, CSV and GeoParquet layers). |

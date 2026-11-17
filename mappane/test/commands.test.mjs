@@ -8,6 +8,7 @@ test("command parser accepts map operations and rejects invalid commands and URL
   assert.deepEqual(parseCommand("clear"), { command: "clear" });
   assert.deepEqual(parseCommand("zoom"), { command: "zoom" });
   assert.deepEqual(parseCommand("zoom layer-1"), { command: "zoom", value: "layer-1" });
+  assert.deepEqual(parseCommand("zoom  Schools by neighborhood "), { command: "zoom", value: "Schools by neighborhood" });
   assert.deepEqual(parseCommand("remove  Route (geodesic) "), { command: "remove", layer: "Route (geodesic)" });
   assert.deepEqual(parseCommand("update-layer Cities"), { command: "update-layer", layer: "Cities" });
   assert.deepEqual(parseCommand("reorder L3 top"), { command: "reorder", layer: "L3", position: "top" });
@@ -32,7 +33,7 @@ test("command parser accepts map operations and rejects invalid commands and URL
     command: "geopackage", url: "https://example.com/data.gpkg", table: "my table",
   });
   assert.deepEqual(parseCommand('graphics {"type":"Point","coordinates":[0,1]}').data.coordinates, [0, 1]);
-  for (const text of ["", "extent extra", "clear all", "zoom a b", "remove", "remove  ", "reorder", "reorder L3", "reorder L3 up", "reorder L3 -1", "update-layer", "screenshot", "basemaps", "basemap list extra", "login extra", "save-webmap", "save-webmap  ", "geojson file:///etc/passwd", "geojson javascript:alert(1)", "geojson https://user:password@example.com", "nope", "graphics not-json"]) {
+  for (const text of ["", "extent extra", "clear all", "remove", "remove  ", "reorder", "reorder L3", "reorder L3 up", "reorder L3 -1", "update-layer", "screenshot", "basemaps", "basemap list extra", "login extra", "save-webmap", "save-webmap  ", "geojson file:///etc/passwd", "geojson javascript:alert(1)", "geojson https://user:password@example.com", "nope", "graphics not-json"]) {
     assert.throws(() => parseCommand(text));
   }
 });
