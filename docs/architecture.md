@@ -25,7 +25,7 @@ shell/agent ── bin/map-command (cli/command.mjs) ──socket─┘     │ 
 | `GET /api/start` | page | The start view from `MAP_PANE_*` (`startView` in `web/commands.js`). |
 | `GET /api/info` | CLI, launcher | `{url, pid, socket}` |
 | `GET /events` | page | SSE: `event: version`, then `reset` + log replay + saved view for a new page, then live commands. Ids are `<epoch>:<n>`. |
-| `POST /cmd {op, args, waitMs?}` | mod, CLI | Sends a command to every page. The first `ok` ack answers. An error answers only when every connected page failed. `503 noPage` when no page is open. |
+| `POST /cmd {op, args, waitMs?}` | mod, CLI | Sends a command to every page, except `save_webmap`, which runs on one page only. The first `ok` ack answers. An error answers only when every connected target page failed. `503 noPage` when no page is open. |
 | `POST /ack`, `POST /state` | page | A command's answer, or a manual change, with the page's map state. |
 | `POST /clear` | mod, CLI | Empties the log, takes a new epoch, sends `reset` to every page, deletes inline GeoJSON files. |
 | `POST /input` | mod | Pane size and mouse/key events for `viewer.mjs`. |
@@ -45,8 +45,11 @@ Stdout lines that the mod reads: `bridge: <url>`, `SOCKET <path>`, `STATE {...}`
 | `reset` | n/a | Sent by the bridge. Removes all layers and restores the start basemap. |
 
 The bridge names each logged layer `L<n>` (`L<n>-<i>` for a multi-table `graphics`), so ids match on every page.
+Command ids are assigned after preparation finishes, in delivery order, so overlapping GeoPackage loads cannot make reconnects replay an already-applied command.
 Inline `add_layer` GeoJSON (`data`) is written to a file in the data folder; the log holds the path.
 A screenshot's data URL is written to a PNG in the data folder; the answer holds the path.
+`save_webmap` runs on the first connected page and is never retried on another page after failure or disconnection, since the portal item may already exist.
+Local feature collections keep their layer filters when saved. Layer updates validate all requested property names before applying any changes.
 
 ## Security
 

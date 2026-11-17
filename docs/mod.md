@@ -108,6 +108,8 @@ The CLI and the mod drive the same map, so a sign-in from the shell applies to t
 4. Sign in on the page that opens.
 5. Ask Claude for a basemap style, or to save a web map.
 
+A save runs on one map page, even when both the pane and browser are open. It keeps filters on local feature layers. If that page disconnects while saving, check the portal before retrying: the item may already exist.
+
 The token stays in the open map pages and in bridge memory. It is not saved with the map.
 Pages that open later get it from the bridge. After a bridge restart, sign in again.
 
@@ -148,6 +150,7 @@ Set the variables before you start Claude Code. The mod passes its environment t
 | `map: off`, tools say "port 8765 is held" | Another Claude Code session has the map. | Close the map in that session (`/map stop`). Then type `/map` here. |
 | "wrong bridge token" | The bridge belongs to another session. | Same as above. |
 | The pane says "The map could not start" | Chrome crashed 3 times. | Examine `CHROME`. Type `/map stop`, then `/map`. |
+| Chrome cannot start at its configured path | Missing binary or an incorrect `CHROME` path | Correct `CHROME` and restart the map. The bridge reports the startup error and stays running. |
 | The pane is blank | No access to `js.arcgis.com`. | Open `http://127.0.0.1:8765/` in a browser and examine the console. |
 | "needs a sign-in" | A basemap style or `save_webmap` with no token | Do [Sign in](#7-sign-in). |
 
