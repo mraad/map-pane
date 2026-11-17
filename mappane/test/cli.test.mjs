@@ -8,7 +8,7 @@ import http from "node:http";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
-import { request } from "../cli/command.mjs";
+import { request, toOp } from "../cli/command.mjs";
 
 const ROOT = join(import.meta.dirname, "..");
 const tmp = mkdtempSync("/tmp/map-command-test-");
@@ -127,6 +127,8 @@ test("CLI verbs become bridge ops; results and page errors come back", { timeout
     [["extent"], { op: "extent", args: {} }],
     [["zoom", "L3"], { op: "zoom", args: { layer: "L3" } }],
     [["remove", "L3"], { op: "remove_layer", args: { id: "L3" } }],
+    [["update-layer", "My", "layer", "--renderer", '{"type":"simple"}', "--labels", '{"labelPlacement":"above-center"}', "--opacity", "0", "--visible", "false", "--filter", "n > 1"],
+      { op: "update_layer", args: { id: "My layer", renderer: { type: "simple" }, labelingInfo: [{ labelPlacement: "above-center" }], opacity: 0, visible: false, definitionExpression: "n > 1" } }],
     [["go_to", "location", "380 New York St, Redlands, CA 92373"], { op: "go_to", args: { location: "380 New York St, Redlands, CA 92373" } }],
     [["go_to", "coordinate", "30.2672", "-97.7431", "12"], { op: "go_to", args: { center: [-97.7431, 30.2672], zoom: 12 } }],
     [["basemap", "satellite"], { op: "set_basemap", args: { basemap: "satellite" } }],
@@ -251,4 +253,12 @@ test("CLI login fails clearly without a client ID", { timeout: 10_000 }, async (
   await map.reply(await map.next(), {});
   assert.equal(await run.exited, 1);
   assert.match(run.err(), /--client-id or set MAP_PANE_CLIENT_ID/);
+});
+
+test("update-layer needs one valid change", () => {
+  const op = (input) => toOp({ command: "update-layer", layer: "L1", ...input });
+  assert.throws(() => op({}), /at least one of/);
+  for (const opacity of ["", " ", "1.5", "-0.1", "half"]) assert.throws(() => op({ opacity }), /--opacity/, opacity);
+  assert.throws(() => op({ visible: "yes" }), /--visible/);
+  assert.deepEqual(op({ title: "New", opacity: "1" }), { op: "update_layer", args: { id: "L1", title: "New", opacity: 1 } });
 });
