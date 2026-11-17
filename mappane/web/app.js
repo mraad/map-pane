@@ -253,12 +253,22 @@ const ops = {
 
   // Styles need a sign-in or an API key; the portal's gallery needs a sign-in.
   async list_basemaps() {
-    const portal = await portalBasemaps()
+    // An expired token can leave the portal load waiting for an interactive sign-in: bound it, and keep the
+    // built-in ids when the gallery fails.
+    let portal, portalError
+    try {
+      portal = await Promise.race([
+        portalBasemaps(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('the portal basemap gallery did not load in 10 s; run login again')), 10000)),
+      ])
+    } catch (err) {
+      portalError = String(err?.message ?? err)
+    }
     const styles = Boolean(apiKey || IdentityManager.credentials.length)
     return {
       current: currentBasemap(), signedIn: Boolean(portalUrl()),
       keyless: BASEMAPS.keyless, legacy: BASEMAPS.legacy,
-      ...(styles && { styles: BASEMAPS.styles }), ...(portal && { portal }),
+      ...(styles && { styles: BASEMAPS.styles }), ...(portal && { portal }), ...(portalError && { portalError }),
     }
   },
 

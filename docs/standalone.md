@@ -130,6 +130,7 @@ A property with only numbers becomes a `double` field. Other properties become `
 - `legacy`: 16 ids that work with no sign-in, for example `osm`, `satellite`, `dark-gray-vector`.
 - `styles`: 78 basemap style ids, for example `arcgis/navigation`. Only after `login` (or with `?apiKey=`).
 - `portal`: the basemap gallery of the portal you signed in to, as `id` (item id) and `title`. Only after `login`.
+  If the gallery fails or takes more than 10 s (for example, an expired sign-in), `portalError` says why and the other lists stay.
 
 With no running map, `basemap list` prints `keyless`, `legacy` and `styles` and a note on standard error.
 `basemap <item-id>` sets a portal basemap. A basemap that fails leaves the current basemap in place.

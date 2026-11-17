@@ -300,6 +300,12 @@ test("login registers the token with the SDK for the portal", async () => {
   })()`);
   assert.deepEqual(credential, { token: "T1", userId: "u1" });
   await assert.rejects(command({ command: "login", portalUrl, clientId: "cid" }), /login needs/);
+  // Signed in, but this portal does not exist: the list keeps the built-in ids and reports the gallery error.
+  const list = await command({ command: "basemap", list: true });
+  assert.equal(list.signedIn, true);
+  assert.ok(list.legacy.includes("osm") && list.styles.includes("arcgis/nova"));
+  assert.equal(list.portal, undefined);
+  assert.equal(typeof list.portalError, "string");
 });
 
 test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {
