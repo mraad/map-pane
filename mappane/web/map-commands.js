@@ -83,6 +83,7 @@ function featureCollection(layer) {
       layerDefinition: {
         name: layer.title, type: "Feature Layer", geometryType: GEOMETRY[layer.geometryType],
         objectIdField: layer.objectIdField, fields: layer.fields.map((field) => field.toJSON()),
+        definitionExpression: layer.definitionExpression,
         drawingInfo: { renderer: layer.renderer.toJSON(), ...(layer.labelingInfo && { labelingInfo: layer.labelingInfo.map((l) => l.toJSON()) }) },
       },
       featureSet: { geometryType: GEOMETRY[layer.geometryType], features: layer.source.toArray().map((g) => ({ geometry: g.geometry.toJSON(), attributes: g.attributes })) },

@@ -61,7 +61,7 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   t.after(() => { globalThis.$arcgis = previous; });
   const json = (value) => ({ toJSON: () => value, clone: () => value });
   const local = { id: "local", title: "Wells", type: "feature", opacity: 1, visible: true, geometryType: "point", objectIdField: "__oid",
-    fields: [json({ name: "__oid", type: "esriFieldTypeOID" })], renderer: json({ type: "simple" }),
+    fields: [json({ name: "__oid", type: "esriFieldTypeOID" })], renderer: json({ type: "simple" }), definitionExpression: "__oid > 1",
     source: { toArray: () => [{ geometry: json({ x: 1, y: 2 }), attributes: { __oid: 1 } }] } };
   const service = { id: "service", type: "map-image", url: "https://example.com/MapServer", clone: () => "service-clone" };
   let layers = [local, service];
@@ -92,5 +92,6 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   assert.deepEqual(updated.operationalLayers.map((layer) => layer.id), ["local", "service-saved"]);
   const [{ layerDefinition, featureSet }] = updated.operationalLayers[0].featureCollection.layers;
   assert.equal(layerDefinition.geometryType, "esriGeometryPoint");
+  assert.equal(layerDefinition.definitionExpression, "__oid > 1");
   assert.deepEqual(featureSet.features, [{ geometry: { x: 1, y: 2 }, attributes: { __oid: 1 } }]);
 });

@@ -105,8 +105,8 @@ function setProperties(layer, args) {
   for (const key of PROPERTIES) {
     if (args[key] === undefined) continue
     if (!(key in layer)) throw new Error(`a ${layer.type} layer has no ${key}`)
-    layer[key] = args[key]
   }
+  for (const key of PROPERTIES) if (args[key] !== undefined) layer[key] = args[key]
   if (args.labelingInfo !== undefined && 'labelsVisible' in layer) layer.labelsVisible = true
 }
 
