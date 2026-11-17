@@ -52,7 +52,7 @@ Suites: `mappane/web/server.test.mjs` (bridge over TCP, ports 18765/18766), `vie
 
 - Bridge TCP: only `Host: 127.0.0.1:<bound port>`, no foreign `Origin`; control endpoints need `x-map-pane-token`
   when `MAP_PANE_TOKEN` is set. The socket skips both (mode 0600). Keep all three.
-- `login` is never logged or saved (`READ_ONLY` in `server.mjs`). A new op that changes the map must be logged;
+- `login` is never logged or saved (`READ_ONLY` in `server.mjs`); the last one lives in bridge memory (`lastLogin`) and is replayed first to each new page. A new op that changes the map must be logged;
   one that only reads or moves the view goes in `READ_ONLY`.
 - The bridge names logged layers (`L<n>`); every op that adds layers must use the `layerId` it gets.
 - `$.state` atoms carry `shape` tags (`status-2`, `frame-2`): bump them when `types/index.d.ts` changes.
@@ -62,6 +62,7 @@ Suites: `mappane/web/server.test.mjs` (bridge over TCP, ports 18765/18766), `vie
 - `web/app.js` sets `window.view`; e2e tests use it.
 - Kitty pane: ack screencast frames in the `stdout.write` callback; frames use `q=2`; `quit()` cleans up on every exit path.
 - `--split` uses `initial input` + `exec`, and targets the launcher's tty.
-- Zoom to a layer with `queryExtent()` (honours `definitionExpression`). GeoParquet with no `crs` gets OGC:CRS84.
+- Zoom only through `extentOf` in `app.js` (`queryExtent()` honours `definitionExpression`; one match uses the feature's geometry, since SDK 5.2 pads a one-point extent wrongly). GeoParquet with no `crs` gets OGC:CRS84.
+- One GeoJSON reader: `toGraphics` in `web/geojson.js` (ring order, checks) serves `add_graphic`, `graphics` and GeoPackage.
 - `shortcut:` comments mark accepted limits (fixed mod port 8765, 1:2 cells, growing log, inline GeoPackage log).
 - The SDK CDN at `5.2.2` reports `kernel.fullVersion = "5.2.1"`; tests check the load URL instead.

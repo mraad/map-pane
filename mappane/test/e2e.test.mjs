@@ -293,3 +293,24 @@ test("login registers the token with the SDK for the portal", async () => {
   assert.deepEqual(credential, { token: "T1", userId: "u1" });
   await assert.rejects(command({ command: "login", portalUrl, clientId: "cid" }), /login needs/);
 });
+
+test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {
+  const op = (name, args = {}) => sendCommand(commandSocket(server.pid), { op: name, args });
+  await request(commandSocket(server.pid), "/clear", {}); // only this test's layers count for zoom-all
+  const { layers: [two] } = await op("graphics", { title: "Two", data: { type: "FeatureCollection", features: [
+    { type: "Feature", properties: { name: "Paris" }, geometry: { type: "Point", coordinates: [2.35, 48.86] } },
+    { type: "Feature", properties: { name: "Sydney" }, geometry: { type: "Point", coordinates: [151.2, -33.87] } },
+  ] } });
+  await op("update_layer", { id: two.id, definitionExpression: "name = 'Paris'" });
+  await op("zoom");
+  const [lon, lat] = await evaluate("[view.center.longitude, view.center.latitude]");
+  assert.ok(Math.abs(lon - 2.35) < 1 && Math.abs(lat - 48.86) < 1, `zoom-all shows the filtered Paris, not both: ${lon}, ${lat}`);
+
+  // RFC 7946 order: counterclockwise exterior, clockwise hole. ArcGIS wants the opposite.
+  const outer = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]];
+  const hole = [[2, 2], [2, 8], [8, 8], [8, 2], [2, 2]];
+  const { layerId } = await op("add_graphic", { geometry: { type: "Polygon", coordinates: [outer, hole] }, layer: "Donut" });
+  const areas = await evaluate(`view.map.findLayerById(${JSON.stringify(layerId)}).graphics.getItemAt(0).geometry.rings
+    .map((r) => r.slice(1).reduce((a, p, i) => a + r[i][0] * p[1] - p[0] * r[i][1], 0))`);
+  assert.ok(areas[0] < 0 && areas[1] > 0, `exterior clockwise, hole counterclockwise: ${areas}`);
+});

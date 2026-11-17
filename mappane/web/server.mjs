@@ -55,6 +55,8 @@ const SESSIONS = join(homedir(), '.claude', 'map-pane', 'sessions')
 const HOME = SESSION && join(SESSIONS, SESSION)
 const KEEP_SESSION_MS = 30 * 24 * 3600 * 1000
 const SAVE = HOME && join(HOME, 'map.json')
+// The view changes on every pan: it gets its own small file, so a pan never rewrites the (possibly large) log.
+const VIEW = HOME && join(HOME, 'view.json')
 // Inline GeoJSON and screenshots are written here: the session folder, or a temp folder when nothing is saved.
 const DATA = HOME ? join(HOME, 'data') : mkdtempSync(join(tmpdir(), 'map-pane-data-'))
 mkdirSync(DATA, { recursive: true })
@@ -70,12 +72,22 @@ function removeOldSessions() {
   }
 }
 
-function load() {
+const readJson = path => {
   try {
-    const saved = JSON.parse(readFileSync(SAVE, 'utf8'))
-    if (typeof saved.epoch === 'string' && Array.isArray(saved.log)) return saved
-  } catch {}
-  return { epoch: randomUUID().slice(0, 8), log: [], view: {} }
+    return JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    return undefined
+  }
+}
+const writeJson = (path, value) => {
+  writeFileSync(`${path}.tmp`, JSON.stringify(value))
+  renameSync(`${path}.tmp`, path)
+}
+function load() {
+  const saved = readJson(SAVE)
+  const view = readJson(VIEW) ?? saved?.view ?? {} // saved.view: a map.json from before view.json
+  if (typeof saved?.epoch === 'string' && Array.isArray(saved.log)) return { epoch: saved.epoch, log: saved.log, view }
+  return { epoch: randomUUID().slice(0, 8), log: [], view }
 }
 // shortcut: the log only grows (a removed layer stays as add + remove); compact it if replays get slow.
 const saved = SAVE ? load() : { epoch: randomUUID().slice(0, 8), log: [], view: {} }
@@ -84,13 +96,12 @@ let { epoch } = saved
 let log = saved.log
 let nextId = Math.max(0, ...log.map(entry => entry.id)) + 1
 
-const save = () => {
-  if (!SAVE) return
-  writeFileSync(`${SAVE}.tmp`, JSON.stringify({ epoch, log, view: { center: state.center, zoom: state.zoom } }))
-  renameSync(`${SAVE}.tmp`, SAVE)
-}
+const saveLog = () => SAVE && writeJson(SAVE, { epoch, log })
+const saveView = () => VIEW && writeJson(VIEW, { center: state.center, zoom: state.zoom })
 
 const tabs = new Set()
+// The last successful login's args (token included): memory only, replayed to each new page.
+let lastLogin
 // /cmd calls waiting for a first page (the mod just opened the pane): resolved when a page connects.
 const tabWaiters = new Set()
 const pending = new Map()
@@ -190,6 +201,8 @@ const publish = () => console.log(`STATE ${JSON.stringify(snapshot())}`)
 
 // Set once the port is bound (PORT 0 picks one).
 let HOST = `127.0.0.1:${PORT}`
+// shortcut: single-user machine. GET /events, /state and /files need no token (browsers cannot send one), so another
+// local user account could read the map and its served files over TCP; only the Unix socket is owner-only.
 // The mod's per-session secret: the Host/Origin guard stops web pages, not other local programs.
 // Set, it is required on the TCP control endpoints (/cmd, /input, /clear). The Unix socket needs none:
 // only its owner can connect (mode 0600).
@@ -256,6 +269,8 @@ const handler = async (req, res) => {
       const [lastEpoch, lastN] = String(req.headers['last-event-id'] ?? '').split(':')
       const isKnown = lastEpoch === epoch && Number(lastN) < nextId
       if (!isKnown) sse(res, { op: 'reset' }, false)
+      // Before the log: a logged basemap style or portal layer needs the token to replay.
+      if (!isKnown && lastLogin) sse(res, { op: 'login', args: lastLogin, replay: true }, false)
       for (const entry of log) if (!isKnown || entry.id > Number(lastN)) sse(res, toPage(entry, true))
       if (!isKnown && state.center) sse(res, { op: 'go_to', args: { center: state.center, zoom: state.zoom }, replay: true }, false)
       tabs.add(res)
@@ -289,7 +304,7 @@ const handler = async (req, res) => {
     if (req.method === 'POST' && req.url === '/state') {
       state = (await body(req)).state ?? state
       publish()
-      save()
+      saveView()
       return json(res, 200, { ok: true })
     }
     if (req.method === 'POST' && req.url === '/ack') {
@@ -320,7 +335,7 @@ const handler = async (req, res) => {
       state = { ...state, layers: [] }
       // Sent as a replay: the page posts its state once the reset has run.
       for (const tab of tabs) sse(tab, { op: 'reset', replay: true }, false)
-      save()
+      saveLog()
       publish()
       return json(res, 200, { ok: true, state: snapshot() })
     }
@@ -394,7 +409,9 @@ const handler = async (req, res) => {
         log = log.filter(e => e !== entry)
         forget(entry.args.path)
       }
-      if (isLogged) save()
+      if (isLogged) saveLog()
+      // Kept in memory only (never in the log or on disk), so a page that opens later is signed in too.
+      if (ack.ok && entry.op === 'login') lastLogin = entry.args
       let { result } = ack
       if (ack.ok && cmd.op === 'screenshot' && typeof result?.dataUrl === 'string') {
         const path = join(DATA, `map-${new Date().toISOString().replace(/[:.]/g, '-')}.png`)

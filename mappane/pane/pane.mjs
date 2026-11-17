@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { kittyFrame, parseInput, toCdp } from "./lib.mjs";
+import { CHROME_FLAGS } from "../web/viewer.mjs";
 
 const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
@@ -17,7 +18,7 @@ export async function openPage(url, { signal, timeout = 15_000 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), "map-pane-"));
   const chrome = spawn(
     CHROME,
-    ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--hide-scrollbars", "about:blank"],
+    ["--headless=new", "--remote-debugging-port=0", `--user-data-dir=${profile}`, ...CHROME_FLAGS, "--hide-scrollbars", "about:blank"],
     { stdio: ["ignore", "ignore", "pipe"] },
   );
   let ws;

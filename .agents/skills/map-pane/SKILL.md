@@ -61,7 +61,7 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 | Add GeoJSON (file, `-` for stdin, or inline) | `scripts/map-command graphics ./f.geojson --title 'Name' [--renderer JSON] [--labels JSON]` |
 | Zoom to all layers, or one | `scripts/map-command zoom [LAYER_ID]` |
 | Save a PNG of the map view | `scripts/map-command screenshot ./map.png` |
-| Remove all layers, keep the basemap | `scripts/map-command clear` |
+| Remove all layers; the basemap goes back to the start basemap | `scripts/map-command clear` |
 | Save a private web map item (after `login`) | `scripts/map-command save-webmap 'Title'` |
 
 - Quote URLs, paths and place names. URLs must be HTTP(S). A FeatureServer root loads all its layers; a numbered URL loads one.
@@ -99,7 +99,7 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 - `login` prints the sign-in URL on stderr, opens the browser on macOS and waits up to 5 minutes.
   Use a shell timeout of at least 300 seconds, or run it in the background. Give the URL to the user.
   Do not start a second `login` while one waits.
-- The token lives in the open map pages only, never in the saved map: a bridge restart or page reload loses it; run `login` again.
+- The token lives in the open map pages and in bridge memory, never on disk: a page that opens later is signed in too, a bridge restart loses it; run `login` again.
 - `save-webmap` prints the item id and URL. Avoid `<` and `>` in layer titles; the portal strips them.
 
 ## Data behavior and limits

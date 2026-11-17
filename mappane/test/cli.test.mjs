@@ -235,12 +235,13 @@ test("CLI login runs PKCE against the portal, hands the token to the page, never
   assert.equal(await run.exited, 0, run.err());
   assert.equal(JSON.parse(run.out()).user, "u1");
   assert.doesNotMatch(run.out() + run.err(), /SECRET-TOKEN/);
-  // Not in the log: a page that connects now does not get the token.
+  // Kept in bridge memory (not the log): a page that connects now is signed in by a login replay.
   const late = await fetch(`${url}events`);
   const reader = late.body.getReader();
-  const { value } = await reader.read();
+  let text = "";
+  while (!text.includes('"op":"login"')) text += new TextDecoder().decode((await reader.read()).value);
   await reader.cancel();
-  assert.doesNotMatch(new TextDecoder().decode(value), /SECRET-TOKEN/);
+  assert.match(text, /"op":"login","args":\{[^}]*"token":"SECRET-TOKEN"/);
 });
 
 test("CLI login fails clearly without a client ID", { timeout: 10_000 }, async (t) => {

@@ -148,7 +148,7 @@ mappane/bin/map-command basemap arcgis/navigation
 
 - `login` prints the sign-in URL on standard error. Open it yourself if no browser opens.
 - Only one `login` can wait at a time, because it listens on port 8766. Use `--redirect-uri` or `MAP_PANE_REDIRECT_URI` for another loopback port.
-- After a bridge restart or a page reload, sign in again.
+- Pages that open later get the sign-in from the bridge. After a bridge restart, sign in again.
 
 ## 8. Agents
 

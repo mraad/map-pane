@@ -61,6 +61,23 @@ test('add_layer passes a local path and inline data to the bridge, which serves 
   expect(JSON.parse(posted[1]?.body ?? '{}').args).toEqual({ type: 'geojson', data, labelingInfo: [{ labelExpressionInfo: { expression: '$feature.name' } }] })
 })
 
+test('add_geopackage and save_webmap reach the bridge as the geopackage and save_webmap ops', async ($, on) => {
+  const posted: string[] = []
+  on('http.fetch', (_, e) => {
+    posted.push(bodyText(e.init?.body))
+    return reply({ ok: true, result: {}, state: STATE })
+  })
+  on('tool.call', () => ({ result: {} }))
+
+  await $.tool.call({ tool: 'mcp__mappane__add_geopackage', path: '/data/wells.gpkg', table: 'wells' })
+  await $.tool.call({ tool: 'mcp__mappane__save_webmap', title: 'Wells' })
+
+  expect(posted.map(body => JSON.parse(body))).toEqual([
+    { op: 'geopackage', args: { path: '/data/wells.gpkg', table: 'wells' } },
+    { op: 'save_webmap', args: { title: 'Wells' } },
+  ])
+})
+
 test('map_state reads the bridge, not the tab', async ($, on) => {
   const urls: string[] = []
   on('http.fetch', (_, e) => {

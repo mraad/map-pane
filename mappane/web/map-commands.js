@@ -1,11 +1,6 @@
 import { httpUrl, validateGoTo } from "./commands.js";
 import { toGraphics } from "./geojson.js";
 
-// The ops that app.js delegates here: go_to location, extent, zoom (all layers), login, save-webmap, graphics.
-// The bridge times commands out, so these take no AbortSignal.
-export async function runMapCommand(view, input) {
-  return executeMapCommand(view, input);
-}
 
 // The page owns the token: it registers it with the SDK and refreshes it before it expires.
 // The refresh token stays in page memory only; a pane restart needs a new login.
@@ -132,16 +127,16 @@ async function saveWebMap(view, { title }) {
   };
 }
 
-async function executeMapCommand(view, input) {
+// The ops that app.js delegates here: go_to location, extent, login, save-webmap, graphics.
+// The bridge times commands out, so these take no AbortSignal.
+export async function runMapCommand(view, input) {
   if (!input || typeof input !== "object") throw new Error("Expected a map command");
   const { command } = input;
   if (command === "extent") return view.extent.toJSON();
   if (command === "go_to") {
+    // app.js moves to coordinates itself; only geocoding comes here.
+    if (input.mode !== "location") throw new Error("go_to here takes a location");
     validateGoTo(input);
-    if (input.mode === "coordinate") {
-      await view.goTo({ center: [input.longitude, input.latitude], ...(input.zoom !== undefined && { zoom: input.zoom }) });
-      return { extent: view.extent.toJSON() };
-    }
     const locator = await $arcgis.import("@arcgis/core/rest/locator.js");
     const [match] = await locator.addressToLocations("https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer", {
       address: { SingleLine: input.location.trim() }, maxLocations: 1, outSpatialReference: { wkid: 4326 },
@@ -155,17 +150,6 @@ async function executeMapCommand(view, input) {
     return login(IdentityManager, input);
   }
   if (command === "save-webmap") return saveWebMap(view, input);
-  if (command === "zoom") {
-    const layers = view.map.layers.filter((layer) => !input.value || layer.id === input.value).toArray();
-    if (!layers.length) throw new Error(input.value ? `No layer with id ${input.value}` : "No operational layers to zoom to");
-    await Promise.all(layers.map((layer) => layer.load()));
-    // A FeatureServer root is a group layer without its own fullExtent: use its sublayers.
-    const targets = layers.flatMap((layer) => [layer, ...(layer.allLayers?.toArray() ?? [])]).flatMap((layer) =>
-      layer.type === "graphics" ? layer.graphics.toArray().map((g) => g.geometry) : layer.fullExtent ? [layer.fullExtent] : []);
-    if (!targets.length) throw new Error("The layers have no extent");
-    await view.goTo(targets);
-    return view.extent.toJSON();
-  }
   if (command === "graphics") {
     const [GraphicsLayer, FeatureLayer] = await Promise.all([
       $arcgis.import("@arcgis/core/layers/GraphicsLayer.js"), $arcgis.import("@arcgis/core/layers/FeatureLayer.js"),
