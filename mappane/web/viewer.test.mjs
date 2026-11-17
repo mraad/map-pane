@@ -1,10 +1,27 @@
 // Viewer input mapping: node --test web/
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { pixelSize, toKeys, toMouse, toWheel } from './viewer.mjs'
 
 const size = pixelSize(40, 20) // 400 x 400 px
+
+test('a missing Chrome binary rejects startup and removes its temporary folder', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'map-viewer-test-'))
+  t.after(() => rmSync(dir, { recursive: true, force: true }))
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import { startViewer } from ${JSON.stringify(new URL('./viewer.mjs', import.meta.url).href)};
+    await assert.rejects(startViewer({ url: 'about:blank', columns: 40, rows: 10, onFrame: () => {} }), /ENOENT/);
+  `], { env: { ...process.env, CHROME: join(dir, 'missing-chrome'), TMPDIR: dir }, encoding: 'utf8', timeout: 5000 })
+  assert.ifError(result.error)
+  assert.equal(result.status, 0, result.stderr)
+  assert.deepEqual(readdirSync(dir), [])
+})
 
 test('pixel size follows the pane region', () => {
   assert.deepEqual(size, { width: 400, height: 400 })
