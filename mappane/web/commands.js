@@ -2,6 +2,7 @@ export const HELP = `extent
 clear
 zoom [layer-id]
 remove <layer-id | title>
+reorder <layer-id | title> <top | bottom | index>
 update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false]
 go_to location <country | state | city | zipcode | address>
 go_to coordinate <latitude> <longitude> [zoom]
@@ -118,6 +119,12 @@ export function parseCommand(text) {
     throw new Error("go_to needs location or coordinate");
   }
   if (["remove", "update-layer"].includes(command) && value.trim()) return { command, layer: value.trim() };
+  if (command === "reorder") {
+    // The position comes last, so a title may contain spaces. Index 0 is the bottom layer.
+    const [, layer, position] = value.trim().match(/^(.+?)\s+(top|bottom|\d+)$/) ?? [];
+    if (!layer) throw new Error("reorder needs a layer id or title, then top, bottom or an index (0 is the bottom)");
+    return { command, layer, position: /^\d+$/.test(position) ? Number(position) : position };
+  }
   if (command === "screenshot" && value) return { command, file: value };
   if (command === "save-webmap" && value.trim()) return { command, title: value.trim() };
   if (command === "basemap" && value === "list") return { command, list: true };

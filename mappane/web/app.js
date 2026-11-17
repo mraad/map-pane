@@ -207,6 +207,17 @@ const ops = {
     return { removed: layer.id }
   },
 
+  // index: "top", "bottom", or a position in map.layers (0 is drawn first, at the bottom).
+  async reorder_layer({ id, index }) {
+    const layer = findLayer(id)
+    if (!map.layers.includes(layer)) throw new Error(`"${id}" is inside a group layer; reorder the group`)
+    const top = map.layers.length - 1
+    const to = index === 'top' ? top : index === 'bottom' ? 0 : index
+    if (!Number.isInteger(to) || to < 0 || to > top) throw new Error(`index must be top, bottom or 0 to ${top} (0 is the bottom)`)
+    map.reorder(layer, to)
+    return { layerId: layer.id, index: to, order: map.layers.toArray().map(l => l.id) }
+  },
+
   async clear_graphics({ layer }) {
     const targets = layer ? [findLayer(layer)] : map.layers.filter(l => l.type === 'graphics').toArray()
     const other = targets.find(l => l.type !== 'graphics')
