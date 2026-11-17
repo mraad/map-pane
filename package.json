@@ -4,10 +4,23 @@
   "description": "A live web map in a terminal pane, driven by Claude Code (mod) or by Codex, Pi and the shell (CLI)",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "split": "mappane/bin/map-pane --split",
     "serve": "node mappane/web/server.mjs 0",
     "test": "node --test --test-timeout=120000 --test-concurrency=1 mappane/web/ mappane/test/"
+  },
+  "keywords": [
+    "pi-package",
+    "map",
+    "gis",
+    "geojson"
+  ],
+  "pi": {
+    "skills": [
+      "./.agents/skills"
+    ]
   }
 }

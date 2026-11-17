@@ -152,11 +152,21 @@ mappane/bin/map-command basemap arcgis/navigation
 
 ## 8. Agents
 
-The repository has one skill, `.agents/skills/map-pane/SKILL.md`.
-Codex and Pi find it in `.agents/skills/`. Claude Code finds `.claude/skills/map-pane`, a link to the same folder.
+The repository has one skill, `.agents/skills/map-pane/SKILL.md`. Install it once, and it works from any folder.
+The skill runs the CLI by its absolute path, so the agent can work in your own project.
 
-1. Start the agent in the repository folder.
-2. Ask with the skill prefix, or in plain words.
+| Agent | Install |
+|---|---|
+| Codex | `codex plugin marketplace add mraad/map-pane`, then `codex plugin add map-pane@map-pane` |
+| Pi | `pi install git:github.com/mraad/map-pane` |
+
+From a local clone, use its path instead: `codex plugin marketplace add /path/to/map-pane` or `pi install /path/to/map-pane`.
+A local Pi install loads the clone in place. A local Codex install copies it: after a change, run `codex plugin add map-pane@map-pane` again.
+
+Without an install, start the agent in the repository folder: Codex and Pi find `.agents/skills/`,
+and Claude Code finds `.claude/skills/map-pane`, a link to the same folder.
+
+Ask with the skill prefix, or in plain words:
 
 | Agent | Example |
 |---|---|
@@ -192,6 +202,10 @@ With the `mappane` mod loaded, Claude uses the mod's tools. See [mod.md](mod.md)
 Without the mod, Claude uses the skill and the CLI, like Codex and Pi.
 
 ### Tested
+
+On 2026-11-17, Codex and Pi also ran the task from an unrelated folder with the installed plugin and package
+(local installs of this repository). Each ran the CLI from its install path, and wrote the screenshot to the working folder.
+
 
 On 2026-11-17, each agent ran the same task on a live map: geocode Austin, Texas, add `examples/cities.geojson`, save a screenshot.
 

@@ -51,8 +51,19 @@ mappane/bin/map-command go_to location 'Paris, France'
 mappane/bin/map-command graphics examples/cities.geojson --title Cities --renderer examples/population-renderer.json
 ```
 
-Codex: `codex exec -s workspace-write -c sandbox_workspace_write.network_access=true '$map-pane go to Austin, Texas'`.
-Pi: `/skill:map-pane go to Austin, Texas`.
+Codex, from any folder:
+
+```sh
+codex plugin marketplace add mraad/map-pane && codex plugin add map-pane@map-pane
+codex exec -s workspace-write -c sandbox_workspace_write.network_access=true '$map-pane go to Austin, Texas'
+```
+
+Pi, from any folder:
+
+```sh
+pi install git:github.com/mraad/map-pane
+pi -p '/skill:map-pane go to Austin, Texas'
+```
 
 ## One map, many doors
 
