@@ -65,6 +65,7 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `extent` | Prints the bounds and spatial reference of the view. |
 | `clear` | Removes all layers. The basemap goes back to the start basemap. The legend hides. |
 | `zoom [layer-id]` | Shows all layers, or one layer. |
+| `remove <layer-id or title>` | Removes one layer. The other layers and the basemap stay. |
 | `go_to location <place or address>` | Finds a country, state, city, ZIP code or address with the World Geocoding service. Prints the match, the score and the extent. |
 | `go_to coordinate <lat> <lon> [zoom]` | Centers on WGS84 degrees, latitude first. Keeps the zoom unless you give one (0 to 23). |
 | `screenshot <file.png>` | Writes a PNG of the map. The PNG has no legend. |

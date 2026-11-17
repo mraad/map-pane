@@ -38,6 +38,7 @@ export function toOp(command) {
     case "go_to": return input.mode === "location"
       ? { op: "go_to", args: { location: input.location } }
       : { op: "go_to", args: { center: [input.longitude, input.latitude], ...(input.zoom !== undefined && { zoom: input.zoom }) } };
+    case "remove": return { op: "remove_layer", args: { id: input.layer } };
     case "screenshot": return { op: "screenshot", args: {} };
     case "basemap": return { op: "set_basemap", args: { basemap: input.value } };
     case "login": return { op: "login", args: input };

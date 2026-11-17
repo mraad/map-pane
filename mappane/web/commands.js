@@ -1,6 +1,7 @@
 export const HELP = `extent
 clear
 zoom [layer-id]
+remove <layer-id | title>
 go_to location <country | state | city | zipcode | address>
 go_to coordinate <latitude> <longitude> [zoom]
 screenshot <file.png>
@@ -112,6 +113,7 @@ export function parseCommand(text) {
     }
     throw new Error("go_to needs location or coordinate");
   }
+  if (command === "remove" && value.trim()) return { command, layer: value.trim() };
   if (command === "screenshot" && value) return { command, file: value };
   if (command === "save-webmap" && value.trim()) return { command, title: value.trim() };
   if (command === "basemap" && value && !/\s/.test(value)) {

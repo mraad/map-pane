@@ -1,7 +1,7 @@
 ---
 name: map-pane
-description: Open, control and close a live web map (Ghostty split, browser, or the Claude Code mod's map) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, clear the map, save a web map, or take a screenshot of a running map.
-argument-hint: "open | close | extent | basemaps | basemap <id> | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id] | screenshot <file.png> | clear | save-webmap <title>"
+description: Open, control and close a live web map (Ghostty split, browser, or the Claude Code mod's map) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove a layer, clear the map, save a web map, or take a screenshot of a running map.
+argument-hint: "open | close | extent | basemaps | basemap <id> | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id] | remove <layer-id | title> | screenshot <file.png> | clear | save-webmap <title>"
 ---
 
 # Map pane
@@ -60,6 +60,7 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 | Load a GeoPackage, or one table | `scripts/map-command geopackage URL ['table name']` |
 | Add GeoJSON (file, `-` for stdin, or inline) | `scripts/map-command graphics ./f.geojson --title 'Name' [--renderer JSON] [--labels JSON]` |
 | Zoom to all layers, or one | `scripts/map-command zoom [LAYER_ID]` |
+| Remove one layer (id or title) | `scripts/map-command remove LAYER_ID` |
 | Save a PNG of the map view | `scripts/map-command screenshot ./map.png` |
 | Remove all layers; the basemap goes back to the start basemap | `scripts/map-command clear` |
 | Save a private web map item (after `login`) | `scripts/map-command save-webmap 'Title'` |

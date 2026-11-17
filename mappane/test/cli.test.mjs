@@ -126,6 +126,7 @@ test("CLI verbs become bridge ops; results and page errors come back", { timeout
   const cases = [
     [["extent"], { op: "extent", args: {} }],
     [["zoom", "L3"], { op: "zoom", args: { layer: "L3" } }],
+    [["remove", "L3"], { op: "remove_layer", args: { id: "L3" } }],
     [["go_to", "location", "380 New York St, Redlands, CA 92373"], { op: "go_to", args: { location: "380 New York St, Redlands, CA 92373" } }],
     [["go_to", "coordinate", "30.2672", "-97.7431", "12"], { op: "go_to", args: { center: [-97.7431, 30.2672], zoom: 12 } }],
     [["basemap", "satellite"], { op: "set_basemap", args: { basemap: "satellite" } }],
