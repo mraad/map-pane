@@ -1,6 +1,6 @@
 {
   "name": "mappane",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "description": "Drive a live web map (built on the ArcGIS Maps SDK for JavaScript 5.2) from Claude: add graphics, layers, GeoJSON and GeoPackage data, style, label and filter them, change the basemap, geocode places, take screenshots.",
   "types": "./types/index.d.ts"
