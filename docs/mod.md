@@ -108,8 +108,8 @@ The CLI and the mod drive the same map, so a sign-in from the shell applies to t
 4. Sign in on the page that opens.
 5. Ask Claude for a basemap style, or to save a web map.
 
-The token stays in the open map pages only. It is not saved with the map.
-After a bridge restart or a page reload, sign in again.
+The token stays in the open map pages and in bridge memory. It is not saved with the map.
+Pages that open later get it from the bridge. After a bridge restart, sign in again.
 
 ## 8. The saved map
 

@@ -10,9 +10,8 @@ const CHROME = process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/M
 const CELL_W = 10
 const CELL_H = 20
 // Metal GPU: 2.6x faster first draw than SwiftShader in the 2026-11-09 benchmark. The rest are puppeteer's quiet defaults.
-const FLAGS = [
-  '--headless',
-  '--remote-debugging-pipe',
+// Shared with the Kitty pane (pane/pane.mjs); each adds its own headless mode and CDP transport.
+export const CHROME_FLAGS = [
   '--use-angle=metal',
   '--enable-gpu',
   '--no-first-run',
@@ -30,6 +29,7 @@ const FLAGS = [
   '--password-store=basic',
   '--use-mock-keychain',
 ]
+const FLAGS = ['--headless', '--remote-debugging-pipe', ...CHROME_FLAGS]
 
 const SPECIAL_KEYS = {
   up: ['ArrowUp', 38],

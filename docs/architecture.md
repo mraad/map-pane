@@ -41,7 +41,7 @@ Stdout lines that the mod reads: `bridge: <url>`, `SOCKET <path>`, `STATE {...}`
 | `graphics` | yes | GeoJSON (or decoded GeoPackage tables) as client-side layers (`runMapCommand` in `web/map-commands.js`). One geometry type: FeatureLayer with legend and popups. Mixed: GraphicsLayer. |
 | `geopackage` | as `graphics` | Decoded in the bridge (`cli/geopackage.mjs`, isolated child, read-only SQLite) and logged as a `graphics` op with inline tables. |
 | `go_to`, `screenshot`, `extent`, `zoom`, `save_webmap` | no | Read the map or move the view. `go_to {location}` geocodes. |
-| `login` | no | Carries a token. Never logged, never saved. |
+| `login` | no | Carries a token. Never logged, never saved; the last one is kept in memory and replayed first to each new page. |
 | `reset` | n/a | Sent by the bridge. Removes all layers and restores the start basemap. |
 
 The bridge names each logged layer `L<n>` (`L<n>-<i>` for a multi-table `graphics`), so ids match on every page.
@@ -54,11 +54,12 @@ A screenshot's data URL is written to a PNG in the data folder; the answer holds
 - TCP control endpoints (`/cmd`, `/input`, `/clear`) need `x-map-pane-token` when the bridge has `MAP_PANE_TOKEN` (the mod's per-load random value).
 - The Unix socket skips both checks: only its owner can connect (mode 0600).
 - File URLs use random UUID keys. Only files registered by a command are served.
-- The `login` token stays in page memory.
+- The `login` token stays in page and bridge memory, never in the log or on disk. The bridge replays the last login to each new page, so a logged basemap style or portal layer replays.
+- Single-user machine assumed: `GET /events`, `/state` and `/files` need no token (browsers cannot send one), so another local user account could read the map and its served files over TCP. Only the Unix socket is owner-only.
 
 ## Persistence
 
-With `MAP_PANE_SESSION` the log, view, inline data and screenshots live in `~/.claude/map-pane/sessions/<id>/`.
+With `MAP_PANE_SESSION` the log (`map.json`), view (`view.json`, rewritten on each pan), inline data and screenshots live in `~/.claude/map-pane/sessions/<id>/`.
 Without it (standalone) they live in a temp folder that is deleted on exit.
 Session folders untouched for 30 days are deleted at bridge start.
 

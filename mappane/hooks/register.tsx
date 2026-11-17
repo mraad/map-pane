@@ -59,7 +59,7 @@ const TOOLS = [
         symbol: {
           type: 'object',
           description:
-            'ArcGIS autocast symbol JSON, e.g. {"type":"simple-marker","color":"blue","size":12}. Default: red marker/line/fill.',
+            'ArcGIS autocast symbol JSON, e.g. {"type":"simple-marker","color":"blue","size":12}. Default: orange marker/line/fill (the same as GeoJSON graphics).',
         },
         attributes: { type: 'object', description: 'Attributes shown in the popup.' },
         popupTitle: { type: 'string' },

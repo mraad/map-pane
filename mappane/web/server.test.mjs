@@ -246,6 +246,23 @@ test('a command one page refused and another never answered stays in the log: th
   later.close()
 })
 
+test('a page that opens after a login gets the login first, then the log', async () => {
+  // Its own bridge: the login stays in memory and would reach every later test's pages.
+  const own = await startBridge(SAVED_PORT)
+  const first = page({ port: SAVED_PORT })
+  await first.until(() => first.messages.length)
+  assert.equal((await cmd('login', { token: 'T1', userId: 'u1' }, SAVED_PORT)).status, 200)
+  assert.equal((await cmd('set_basemap', { basemap: 'arcgis/navigation' }, SAVED_PORT)).status, 200)
+  first.close()
+  const later = page({ port: SAVED_PORT })
+  await later.until(() => later.messages.some(m => m.op === 'set_basemap'))
+  const ops = later.messages.map(m => m.op)
+  assert.equal(later.messages.find(m => m.op === 'login').args.token, 'T1')
+  assert.ok(ops.indexOf('login') < ops.indexOf('set_basemap'), ops.join(' '))
+  later.close()
+  await stopBridge(own)
+})
+
 test('a screenshot is written to a PNG file; its path answers, not the picture', async () => {
   const png = Buffer.from('89504e470d0a1a0a', 'hex')
   const tab = page({ answer: () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${png.toString('base64')}`, width: 8, height: 4 } }) })
@@ -309,10 +326,16 @@ test('a session map is saved: a new bridge for the same session replays it, with
   const tab = page({ port: SAVED_PORT })
   await tab.until(() => tab.messages.length)
   await cmd('add_layer', { type: 'geojson', path: file, title: 'Sites' }, SAVED_PORT)
+  const mapJson = join(sessions, 'session-1/map.json')
+  const logBefore = readFileSync(mapJson, 'utf8')
   await call('POST', '/state', { body: { state: { layers: [], center: [10, 20], zoom: 5 } }, port: SAVED_PORT })
+  await cmd('login', { token: 'SECRET-TOKEN', userId: 'u1' }, SAVED_PORT)
   tab.close()
   await stopBridge(saved)
-  assert.ok(existsSync(join(home, '.claude/map-pane/sessions/session-1/map.json')))
+  // A pan writes view.json only; the log file is left alone, and the token is never on disk.
+  assert.equal(readFileSync(mapJson, 'utf8'), logBefore)
+  assert.deepEqual(JSON.parse(readFileSync(join(sessions, 'session-1/view.json'), 'utf8')), { center: [10, 20], zoom: 5 })
+  assert.doesNotMatch(readFileSync(mapJson, 'utf8'), /SECRET-TOKEN/)
   assert.equal(existsSync(old), false, 'a session map untouched for 30 days is deleted')
   assert.ok(existsSync(recent))
 
@@ -323,6 +346,7 @@ test('a session map is saved: a new bridge for the same session replays it, with
   assert.equal(layer.args.title, 'Sites')
   assert.equal((await call('GET', layer.args.url, { port: SAVED_PORT })).status, 200)
   assert.deepEqual(next.messages.at(-1).args, { center: [10, 20], zoom: 5 })
+  assert.ok(!next.messages.some(m => m.op === 'login'), 'a new bridge has no token to replay')
   next.close()
   await stopBridge(saved)
 })

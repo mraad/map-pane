@@ -1,5 +1,6 @@
 // The map page: runs the bridge's commands one at a time (SSE /events -> POST /ack). No build step.
 import { runMapCommand } from './map-commands.js'
+import { toGraphics } from './geojson.js'
 
 const [Graphic, GraphicsLayer, reactiveUtils, IdentityManager] = await Promise.all(
   ['Graphic', 'layers/GraphicsLayer', 'core/reactiveUtils', 'identity/IdentityManager'].map(m => $arcgis.import(`@arcgis/core/${m}.js`)),
@@ -26,26 +27,6 @@ const legend = document.querySelector('arcgis-legend')
 const showLegend = () => { legend.hidden = map.layers.length === 0 }
 map.layers.on('change', showLegend)
 showLegend()
-
-const WGS84 = { wkid: 4326 }
-const DEFAULT_SYMBOL = {
-  point: { type: 'simple-marker', color: [226, 61, 40], size: 10, outline: { color: 'white', width: 1 } },
-  polyline: { type: 'simple-line', color: [226, 61, 40], width: 3 },
-  polygon: { type: 'simple-fill', color: [226, 61, 40, 0.35], outline: { color: [226, 61, 40], width: 2 } },
-}
-
-// GeoJSON geometry -> ArcGIS autocast geometry (WGS84).
-function toGeometry(g) {
-  switch (g?.type) {
-    case 'Point': return { type: 'point', longitude: g.coordinates[0], latitude: g.coordinates[1] }
-    case 'MultiPoint': return { type: 'multipoint', points: g.coordinates, spatialReference: WGS84 }
-    case 'LineString': return { type: 'polyline', paths: [g.coordinates], spatialReference: WGS84 }
-    case 'MultiLineString': return { type: 'polyline', paths: g.coordinates, spatialReference: WGS84 }
-    case 'Polygon': return { type: 'polygon', rings: g.coordinates, spatialReference: WGS84 }
-    case 'MultiPolygon': return { type: 'polygon', rings: g.coordinates.flat(), spatialReference: WGS84 }
-    default: throw new Error(`unsupported geometry type: ${g?.type}`)
-  }
-}
 
 // The bridge names each new layer (layerId), so every page that replays the log has the same ids.
 function graphicsLayer(title, id) {
@@ -142,6 +123,11 @@ async function extentOf(layer) {
     const { count, extent } = await layer.queryExtent()
     // The query honours the layer's filter: no match means nothing to show, not the whole service.
     if (count === 0) throw new Error(`layer "${layer.title ?? layer.id}" has no features to go to (check its filter)`)
+    // SDK 5.2: one client-side point gets a padded extent in metres labelled WGS84 (spans the globe): use the feature.
+    if (count === 1 && layer.queryFeatures) {
+      const { features: [feature] } = await layer.queryFeatures(Object.assign(layer.createQuery(), { returnGeometry: true }))
+      if (feature?.geometry) return feature.geometry
+    }
     if (extent) return extent
   }
   if (!layer.fullExtent) throw new Error(`layer "${layer.title ?? layer.id}" has no extent to go to`)
@@ -162,19 +148,16 @@ const ops = {
   },
 
   async add_graphic({ geometry, symbol, attributes, popupTitle, layer = 'Graphics' }, { layerId }) {
-    const geom = toGeometry(geometry)
+    // Same GeoJSON reader as the graphics op: input checks, ArcGIS ring order, Z, GeometryCollection.
+    const graphics = toGraphics(geometry)
+    if (!graphics.length) throw new Error('the geometry is empty')
     const target = graphicsLayer(layer, layerId)
     let popupTemplate
     if (popupTitle || attributes) {
       popupTemplate = { title: popupTitle ?? layer }
       if (attributes) popupTemplate.content = [{ type: 'fields', fieldInfos: Object.keys(attributes).map(fieldName => ({ fieldName })) }]
     }
-    target.add(new Graphic({
-      geometry: geom,
-      symbol: symbol ?? DEFAULT_SYMBOL[geom.type === 'multipoint' ? 'point' : geom.type],
-      attributes,
-      popupTemplate,
-    }))
+    for (const g of graphics) target.add(new Graphic({ geometry: g.geometry, symbol: symbol ?? g.symbol, attributes, popupTemplate }))
     return { layerId: target.id, graphics: target.graphics.length }
   },
 
@@ -275,8 +258,12 @@ const ops = {
   async extent() { return runMapCommand(view, { command: 'extent' }) },
   // One layer by id or title (queryExtent honours its filter), or all layers.
   async zoom({ layer }) {
-    if (!layer) return runMapCommand(view, { command: 'zoom' })
-    await view.goTo(await extentOf(findLayer(layer)))
+    const layers = layer ? [findLayer(layer)] : map.layers.toArray()
+    if (!layers.length) throw new Error('no layers to zoom to')
+    // All layers: one without an extent is skipped; one named layer must have one.
+    const targets = (await Promise.all(layers.map(l => (layer ? extentOf(l) : extentOf(l).catch(() => []))))).flat()
+    if (!targets.length) throw new Error('the layers have no extent')
+    await view.goTo(targets)
     return view.extent.toJSON()
   },
   async login(args) { return runMapCommand(view, { ...args, command: 'login' }) },

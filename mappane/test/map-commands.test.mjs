@@ -2,18 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { runMapCommand } from "../web/map-commands.js";
 
-test("go_to coordinates preserve zoom unless supplied and validate direct requests", async () => {
-  const calls = [];
-  const view = { goTo: async (...args) => calls.push(args), extent: { toJSON: () => ({ xmin: 1 }) } };
-  const input = { command: "go_to", mode: "coordinate", latitude: 30, longitude: -97 };
-  assert.deepEqual(await runMapCommand(view, input), { extent: { xmin: 1 } });
-  await runMapCommand(view, { ...input, zoom: 0 });
-  assert.deepEqual(calls.map(([target]) => target), [{ center: [-97, 30] }, { center: [-97, 30], zoom: 0 }]);
-  for (const invalid of [{ latitude: 91 }, { longitude: "-97" }, { zoom: null }, { zoom: -1 }, { mode: "bad" }]) {
-    await assert.rejects(runMapCommand(view, { ...input, ...invalid }), /go_to/);
-  }
+test("go_to takes only a location here and validates it", async () => {
+  const view = { goTo: async () => assert.fail("must not move"), extent: { toJSON: () => ({}) } };
+  await assert.rejects(runMapCommand(view, { command: "go_to", mode: "coordinate", latitude: 30, longitude: -97 }), /takes a location/);
   await assert.rejects(runMapCommand(view, { command: "go_to", mode: "location", location: " " }), /go_to/);
-  assert.equal(calls.length, 2);
 });
 
 test("go_to geocodes the best location, fits its extent, and reports no matches or service failures", async (t) => {
