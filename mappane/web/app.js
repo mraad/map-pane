@@ -132,6 +132,12 @@ function setProperties(layer, args) {
 // fullExtent is the whole service; queryExtent honours definitionExpression (feature, GeoJSON, CSV, Parquet).
 async function extentOf(layer) {
   if (layer.type === 'graphics') return layer.graphics.toArray()
+  // A FeatureServer root is a group: go to its sublayers (one without an extent is skipped).
+  if (layer.type === 'group') {
+    const parts = (await Promise.all(layer.layers.toArray().map(l => extentOf(l).catch(() => [])))).flat()
+    if (!parts.length) throw new Error(`layer "${layer.title ?? layer.id}" has no extent to go to`)
+    return parts
+  }
   if (layer.queryExtent) {
     const { count, extent } = await layer.queryExtent()
     if (count > 0 && extent) return extent
@@ -176,18 +182,21 @@ const ops = {
     const layer = await make(args)
     layer.id = layerId
     try {
-      await layer.load()
-    } catch (err) {
-      throw new Error(`layer failed to load: ${err.message}`)
-    }
-    if (layer.isTable) throw new Error('this URL is a table without geometry; use a spatial feature layer')
-    setProperties(layer, args)
-    // A GeoParquet file whose geometry the SDK still cannot decode loads, draws nothing and fails every
-    // query: refuse it rather than add an empty layer.
-    if (layer.type === 'parquet') {
-      await layer.queryExtent().catch(err => {
-        throw new Error(`the map cannot read the geometry of this GeoParquet file (${err.message}). Check its geo metadata.`)
+      await layer.load().catch(err => {
+        throw new Error(`layer failed to load: ${err.message}`)
       })
+      if (layer.isTable) throw new Error('this URL is a table without geometry; use a spatial feature layer')
+      setProperties(layer, args)
+      // A GeoParquet file whose geometry the SDK still cannot decode loads, draws nothing and fails every
+      // query: refuse it rather than add an empty layer.
+      if (layer.type === 'parquet') {
+        await layer.queryExtent().catch(err => {
+          throw new Error(`the map cannot read the geometry of this GeoParquet file (${err.message}). Check its geo metadata.`)
+        })
+      }
+    } catch (err) {
+      layer.destroy() // a refused layer never reaches the map: free what it loaded
+      throw err
     }
     // A click on a feature shows its attributes even when the agent gave no popup.
     if (!layer.popupTemplate && layer.createPopupTemplate) layer.popupTemplate = layer.createPopupTemplate()
@@ -262,7 +271,12 @@ const ops = {
     return runMapCommand(view, { ...args, command: 'graphics', layerId })
   },
   async extent() { return runMapCommand(view, { command: 'extent' }) },
-  async zoom({ layer }) { return runMapCommand(view, { command: 'zoom', ...(layer ? { value: layer } : {}) }) },
+  // One layer by id or title (queryExtent honours its filter), or all layers.
+  async zoom({ layer }) {
+    if (!layer) return runMapCommand(view, { command: 'zoom' })
+    await view.goTo(await extentOf(findLayer(layer)))
+    return view.extent.toJSON()
+  },
   async login(args) { return runMapCommand(view, { ...args, command: 'login' }) },
   async save_webmap({ title }) { return runMapCommand(view, { command: 'save-webmap', title }) },
 

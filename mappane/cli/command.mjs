@@ -99,6 +99,8 @@ async function signIn({ portalUrl, clientId, redirectUri }) {
   }) });
   const token = await response.json().catch(() => ({}));
   if (!token.access_token) throw new Error(`Token request failed: ${token.error?.message ?? token.error_description ?? `HTTP ${response.status}`}`);
+  // The page refuses a login without these; fail here with the reason, not after a confusing page error.
+  if (!Number.isFinite(token.expires_in) || !token.username) throw new Error("Token response has no expires_in or username");
   return {
     portalUrl: portal, clientId, token: token.access_token, expires: Date.now() + token.expires_in * 1000,
     userId: token.username, refreshToken: token.refresh_token,

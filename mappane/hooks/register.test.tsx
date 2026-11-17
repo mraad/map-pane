@@ -104,6 +104,8 @@ test('the pane follows the STATE lines the bridge prints, past stderr and a bad 
     yield { stream: 'stdout' as const, text: line.slice(0, 40) }
     yield { stream: 'stderr' as const, text: '(node) warning\n' }
     yield { stream: 'stdout' as const, text: line.slice(40) }
+    // A live bridge keeps running; a stream that ends is a bridge that exited (see the next test).
+    await new Promise(() => {})
     return { value: { code: 0, signal: null } }
   })
 
@@ -115,6 +117,29 @@ test('the pane follows the STATE lines the bridge prints, past stderr and a bad 
     expect((await ui.find({ type: 'Text', text: /^Graphics \(1\)$/ }))?.text).toBe('Graphics (1)')
     await ui.unmount()
   }
+})
+
+test('a bridge that exits without a BRIDGE down line turns the map off, and every tool says why', async ($, on) => {
+  const statuses: string[] = []
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.register', (_, e) => ({ value: { tool: `mcp__mappane__${e.name}` } }))
+  on('command.register', () => ({ value: { command: 'map' } }))
+  on('ui.status', (_, e) => {
+    statuses.push(e.text ?? '')
+    return { value: undefined }
+  })
+  on('tool.call', () => ({ result: {} }))
+  on('process.spawn', async function* () {
+    yield { stream: 'stdout' as const, text: 'bridge: up\n' }
+    return { value: { code: 1, signal: null } } // a crash: no BRIDGE down line
+  })
+
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  let ran = await $.tool.call({ tool: 'mcp__mappane__map_state' })
+  for (let i = 0; i < 100 && !ran.deny?.includes('not running'); i++) ran = await $.tool.call({ tool: 'mcp__mappane__map_state' })
+
+  expect(ran.deny).toBe('mappane: the map bridge is not running: the bridge exited; /map pane or /map browser starts it again')
+  expect(statuses).toContain('map: off')
 })
 
 test('the bridge gets the session id; when it cannot start, the status line and every tool say why', async ($, on) => {

@@ -35,7 +35,10 @@ let START
 try {
   START = startView(process.env)
 } catch (err) {
-  process.stdout.write(`BRIDGE down ${err.message}\n`, () => process.exit(1))
+  process.stdout.write(`BRIDGE down ${err.message}\n`, () => {
+    if (!HOME) rmSync(DATA, { recursive: true, force: true })
+    process.exit(1)
+  })
 }
 // A large local file or a slow service can take a while to load; the rest is quick.
 const TIMEOUT_MS = { add_layer: 60000, graphics: 60000, save_webmap: 60000, zoom: 30000, screenshot: 30000 }
@@ -114,6 +117,8 @@ function viewerDown(reason) {
 }
 
 function startPaneViewer(size) {
+  // Failures long ago no longer count: a pane that gave up gets 3 tries again.
+  if (Date.now() - lastFailure > FAILURE_WINDOW_MS) viewerFailures = 0
   if (viewerFailures >= MAX_VIEWER_FAILURES) return
   const mine = startViewer({
     url: `http://${HOST}/?embedded=1`,
@@ -272,11 +277,11 @@ const handler = async (req, res) => {
         const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1
         if (start > end) return res.writeHead(416, { 'content-range': `bytes */${size}` }).end()
         res.writeHead(206, { 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1, 'accept-ranges': 'bytes' })
-        return createReadStream(path, { start, end }).pipe(res)
+        return createReadStream(path, { start, end }).on('error', () => res.destroy()).pipe(res)
       }
       res.writeHead(200, { 'content-length': size, 'accept-ranges': 'bytes' })
       if (req.method === 'HEAD') return res.end()
-      return createReadStream(path).pipe(res)
+      return createReadStream(path).on('error', () => res.destroy()).pipe(res)
     }
     if (req.method === 'GET' && req.url === '/state') return json(res, 200, snapshot())
     if (req.method === 'POST' && req.url === '/state') {
@@ -369,7 +374,8 @@ const handler = async (req, res) => {
           else if (firstError && failures >= Math.min(expected, tabs.size)) settle(firstError)
         })
         const timer = setTimeout(
-          () => settle(firstError ?? { ok: false, timedOut: true, error: `the map did not answer in ${timeout} ms; it may still finish, so call map_state before retrying` }),
+          // Timed out: a page may still finish it, so it stays in the log even when another page failed.
+          () => settle({ ...(firstError ?? { ok: false, error: `the map did not answer in ${timeout} ms; it may still finish, so call map_state before retrying` }), timedOut: true }),
           timeout,
         )
         const message = toPage(entry, false)
@@ -398,8 +404,12 @@ const server = createServer(handler)
 
 // The CLI's door: same handler, owner-only socket, removed on exit.
 const commands = createServer(handler)
-commands.listen(SOCKET, () => chmodSync(SOCKET, 0o600))
-process.on('exit', () => rmSync(SOCKET, { force: true }))
+commands.on('error', err => console.error(`command socket: ${err.message}`))
+if (START) {
+  rmSync(SOCKET, { force: true }) // left by a killed bridge with the same pid
+  commands.listen(SOCKET, () => chmodSync(SOCKET, 0o600))
+  process.on('exit', () => rmSync(SOCKET, { force: true }))
+}
 
 // A mod reload starts the new bridge before the old one has let go of the port: retry.
 let tries = 0

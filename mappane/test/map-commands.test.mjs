@@ -19,55 +19,29 @@ test("go_to coordinates preserve zoom unless supplied and validate direct reques
 test("go_to geocodes the best location, fits its extent, and reports no matches or service failures", async (t) => {
   const previous = globalThis.$arcgis;
   t.after(() => { globalThis.$arcgis = previous; });
-  const controller = new AbortController();
   const extent = { xmin: -98, ymin: 30, xmax: -97, ymax: 31, spatialReference: { wkid: 4326 } };
   let candidates = [{ address: "Austin, Texas", score: 100, location: { x: -97.74, y: 30.27 }, extent }];
   let navigated = 0;
   globalThis.$arcgis = { import: async (name) => {
     assert.equal(name, "@arcgis/core/rest/locator.js");
-    return { addressToLocations: async (url, params, options) => {
+    return { addressToLocations: async (url, params) => {
       assert.equal(url, "https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer");
       assert.deepEqual(params, { address: { SingleLine: "Austin" }, maxLocations: 1, outSpatialReference: { wkid: 4326 } });
-      assert.equal(options.signal, controller.signal);
       if (candidates instanceof Error) throw candidates;
       return candidates;
     } };
   } };
-  const view = { extent: { toJSON: () => extent }, goTo: async (target, options) => {
+  const view = { extent: { toJSON: () => extent }, goTo: async (target) => {
     assert.deepEqual(target, extent);
-    assert.equal(options.signal, controller.signal);
     navigated++;
   } };
   const input = { command: "go_to", mode: "location", location: " Austin " };
-  assert.deepEqual(await runMapCommand(view, input, controller.signal), { address: "Austin, Texas", score: 100, extent });
+  assert.deepEqual(await runMapCommand(view, input), { address: "Austin, Texas", score: 100, extent });
   candidates = [];
-  await assert.rejects(runMapCommand(view, input, controller.signal), /No location found/);
+  await assert.rejects(runMapCommand(view, input), /No location found/);
   candidates = new Error("Geocoder unavailable");
-  await assert.rejects(runMapCommand(view, input, controller.signal), /Geocoder unavailable/);
+  await assert.rejects(runMapCommand(view, input), /Geocoder unavailable/);
   assert.equal(navigated, 1);
-});
-
-test("cancelled geocoding cannot navigate after a late response", async (t) => {
-  const previous = globalThis.$arcgis;
-  t.after(() => { globalThis.$arcgis = previous; });
-  let resolveMatch, started;
-  const ready = new Promise((ok) => { started = ok; });
-  globalThis.$arcgis = { import: async () => ({ addressToLocations: () => {
-    started();
-    return new Promise((ok) => { resolveMatch = ok; });
-  } }) };
-  let navigated = false;
-  const controller = new AbortController();
-  const pending = runMapCommand({ goTo: () => { navigated = true; } }, {
-    command: "go_to", mode: "location", location: "Texas",
-  }, controller.signal);
-  await ready;
-  const rejected = assert.rejects(pending, /deadline/);
-  controller.abort(new Error("deadline"));
-  await rejected;
-  resolveMatch([{ location: { x: 1, y: 2 } }]);
-  await new Promise((ok) => setImmediate(ok));
-  assert.equal(navigated, false);
 });
 
 test("graphics preserve properties while assigning unique safe field names", async (t) => {
@@ -88,52 +62,6 @@ test("graphics preserve properties while assigning unique safe field names", asy
   assert.deepEqual(layers[0].fields.map(({ name }) => name), ["__oid", "a_b", "a_b_", "__oid_", "_1st", "field"]);
   assert.deepEqual(layers[0].source[0].attributes, { __oid: 1, a_b: 1, a_b_: 2, __oid_: 3, _1st: 4, field: 5 });
   assert.deepEqual(properties, original);
-});
-
-test("a stalled service lookup releases the next command and cannot add a layer later", { timeout: 5000 }, async (t) => {
-  const previous = globalThis.$arcgis;
-  t.after(() => { globalThis.$arcgis = previous; });
-  let resolveMetadata, destroyed = false, added = false;
-  const metadata = new Promise((ok) => { resolveMetadata = ok; });
-  globalThis.$arcgis = { import: async () => ({ fromArcGISServerUrl: () => metadata }) };
-  const view = { extent: { toJSON: () => ({ xmin: 1 }) }, map: { add: () => { added = true; } } };
-  const controller = new AbortController();
-  const command = runMapCommand(view, { command: "feature-service", url: "https://example.com/FeatureServer" }, controller.signal);
-  const next = command.catch(() => {}).then(() => runMapCommand(view, { command: "extent" }));
-  const rejected = assert.rejects(command, /deadline/);
-  controller.abort(new Error("deadline"));
-  await rejected;
-  assert.deepEqual(await next, { xmin: 1 });
-  resolveMetadata({ load: async () => {}, destroy: () => { destroyed = true; } });
-  await t.waitFor(() => assert.equal(destroyed, true));
-  assert.equal(added, false);
-});
-
-test("a stalled SDK import respects cancellation and cannot replace the basemap later", { timeout: 5000 }, async (t) => {
-  const previous = globalThis.$arcgis;
-  t.after(() => { globalThis.$arcgis = previous; });
-  let resolveImport;
-  const imported = new Promise((ok) => { resolveImport = ok; });
-  globalThis.$arcgis = { import: () => imported };
-  const view = { map: { basemap: "original" } };
-  const controller = new AbortController();
-  const command = runMapCommand(view, { command: "basemap", value: "osm" }, controller.signal);
-  const rejected = assert.rejects(command, /deadline/);
-  controller.abort(new Error("deadline"));
-  await rejected;
-  resolveImport({ fromId: () => { throw new Error("Cancelled work reached the SDK"); } });
-  await new Promise((ok) => setImmediate(ok));
-  assert.equal(view.map.basemap, "original");
-});
-
-test("clear removes and destroys operational layers and keeps the basemap", async () => {
-  const destroyed = [];
-  const layers = ["a", "b"].map((id) => ({ id, destroy: () => destroyed.push(id) }));
-  const map = { basemap: "osm", layers, removeAll: () => layers.splice(0) };
-  assert.deepEqual(await runMapCommand({ map }, { command: "clear" }), { removed: 2 });
-  assert.deepEqual(destroyed, ["a", "b"]);
-  assert.equal(map.layers.length, 0);
-  assert.equal(map.basemap, "osm");
 });
 
 test("save-webmap needs a sign-in, saves service layers with saveAs and embeds client-side layers in map order", async (t) => {

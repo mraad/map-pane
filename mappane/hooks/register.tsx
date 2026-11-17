@@ -242,7 +242,12 @@ async function startBridge($: EngineInterface) {
     .catch(err => $.ui.log(`mappane bridge failed: ${String(err)}`))
     .finally(() => {
       up()
-      if (bridge?.child === child) bridge = undefined
+      // Still ours: it exited on its own (a crash, not /map stop or a reload). Say so, so /map starts it again.
+      if (bridge?.child === child) {
+        bridge = undefined
+        // The module may be unloading: then there is no state left to update.
+        if (!bridgeDown) void stopped($, 'the bridge exited; /map pane or /map browser starts it again').catch(() => undefined)
+      }
     })
   bridge = { child, ready, done }
 }
