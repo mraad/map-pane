@@ -1,0 +1,3 @@
+#!/bin/bash
+# Skill-relative entry point: the map-pane root is four folders up (works through the .claude/skills link too).
+exec "$(cd "$(dirname "$0")/../../../.." && pwd)/mappane/bin/map-pane" "$@"
