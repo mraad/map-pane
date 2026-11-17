@@ -101,6 +101,15 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
   {
+    name: 'reorder_layer',
+    description: 'Change the drawing order of a layer on the live map, by id or title. index: "top", "bottom", or a position from 0 (the bottom layer, drawn first) to the layer count minus 1. map_state lists layers bottom to top.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string' }, index: { type: ['integer', 'string'], description: '"top", "bottom", or 0 (bottom) to n-1 (top).' } },
+      required: ['id', 'index'],
+    },
+  },
+  {
     name: 'clear_graphics',
     description: 'Remove all graphics from one graphics layer (by title or id), or from all of them when layer is omitted.',
     inputSchema: { type: 'object', properties: { layer: { type: 'string' } } },

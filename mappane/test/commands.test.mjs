@@ -10,6 +10,9 @@ test("command parser accepts map operations and rejects invalid commands and URL
   assert.deepEqual(parseCommand("zoom layer-1"), { command: "zoom", value: "layer-1" });
   assert.deepEqual(parseCommand("remove  Route (geodesic) "), { command: "remove", layer: "Route (geodesic)" });
   assert.deepEqual(parseCommand("update-layer Cities"), { command: "update-layer", layer: "Cities" });
+  assert.deepEqual(parseCommand("reorder L3 top"), { command: "reorder", layer: "L3", position: "top" });
+  assert.deepEqual(parseCommand("reorder In-service pipelines bottom"), { command: "reorder", layer: "In-service pipelines", position: "bottom" });
+  assert.deepEqual(parseCommand("reorder Layer 2 0"), { command: "reorder", layer: "Layer 2", position: 0 });
   assert.deepEqual(parseCommand("screenshot map.png"), { command: "screenshot", file: "map.png" });
   assert.deepEqual(parseCommand("basemap osm"), { command: "basemap", value: "osm" });
   assert.deepEqual(parseCommand("basemap arcgis/dark-gray"), { command: "basemap", value: "arcgis/dark-gray" });
@@ -29,7 +32,7 @@ test("command parser accepts map operations and rejects invalid commands and URL
     command: "geopackage", url: "https://example.com/data.gpkg", table: "my table",
   });
   assert.deepEqual(parseCommand('graphics {"type":"Point","coordinates":[0,1]}').data.coordinates, [0, 1]);
-  for (const text of ["", "extent extra", "clear all", "zoom a b", "remove", "remove  ", "update-layer", "screenshot", "basemaps", "basemap list extra", "login extra", "save-webmap", "save-webmap  ", "geojson file:///etc/passwd", "geojson javascript:alert(1)", "geojson https://user:password@example.com", "nope", "graphics not-json"]) {
+  for (const text of ["", "extent extra", "clear all", "zoom a b", "remove", "remove  ", "reorder", "reorder L3", "reorder L3 up", "reorder L3 -1", "update-layer", "screenshot", "basemaps", "basemap list extra", "login extra", "save-webmap", "save-webmap  ", "geojson file:///etc/passwd", "geojson javascript:alert(1)", "geojson https://user:password@example.com", "nope", "graphics not-json"]) {
     assert.throws(() => parseCommand(text));
   }
 });

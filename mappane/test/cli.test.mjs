@@ -128,6 +128,8 @@ test("CLI verbs become bridge ops; results and page errors come back", { timeout
     [["extent"], { op: "extent", args: {} }],
     [["zoom", "L3"], { op: "zoom", args: { layer: "L3" } }],
     [["remove", "L3"], { op: "remove_layer", args: { id: "L3" } }],
+    [["reorder", "My", "layer", "top"], { op: "reorder_layer", args: { id: "My layer", index: "top" } }],
+    [["reorder", "L3", "2"], { op: "reorder_layer", args: { id: "L3", index: 2 } }],
     [["update-layer", "My", "layer", "--renderer", '{"type":"simple"}', "--labels", '{"labelPlacement":"above-center"}', "--opacity", "0", "--visible", "false", "--filter", "n > 1"],
       { op: "update_layer", args: { id: "My layer", renderer: { type: "simple" }, labelingInfo: [{ labelPlacement: "above-center" }], opacity: 0, visible: false, definitionExpression: "n > 1" } }],
     [["go_to", "location", "380 New York St, Redlands, CA 92373"], { op: "go_to", args: { location: "380 New York St, Redlands, CA 92373" } }],

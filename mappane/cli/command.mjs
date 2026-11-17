@@ -39,6 +39,7 @@ export function toOp(command) {
       ? { op: "go_to", args: { location: input.location } }
       : { op: "go_to", args: { center: [input.longitude, input.latitude], ...(input.zoom !== undefined && { zoom: input.zoom }) } };
     case "remove": return { op: "remove_layer", args: { id: input.layer } };
+    case "reorder": return { op: "reorder_layer", args: { id: input.layer, index: input.position } };
     case "update-layer": {
       const { layer, title, renderer, labels, filter, opacity, visible } = input;
       const args = { id: layer, title, renderer, labelingInfo: labels && [labels].flat(), definitionExpression: filter };

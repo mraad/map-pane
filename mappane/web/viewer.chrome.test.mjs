@@ -156,6 +156,14 @@ test('the tools work on the real page; a page that connects later rebuilds the s
   const sized = await cmd('screenshot', { width: 400, height: 300 })
   const png = readFileSync(sized.result.path)
   assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [400, 300], 'IHDR width and height')
+  // Drawing order: logged, so a later page replays the same order.
+  const raised = await cmd('reorder_layer', { id: 'Notes', index: 'top' })
+  assert.equal(raised.status, 200, raised.error)
+  assert.equal(raised.state.layers.at(-1).title, 'Notes')
+  assert.equal((await cmd('reorder_layer', { id: 'Cities (3857)', index: 0 })).status, 200)
+  const outside = await cmd('reorder_layer', { id: 'Notes', index: 9 })
+  assert.equal(outside.status, 422)
+  assert.match(outside.error, /index must be top, bottom or 0 to 4/)
 
   await page.close()
   await waitConnected(false)
@@ -163,14 +171,14 @@ test('the tools work on the real page; a page that connects later rebuilds the s
   page = await open()
   await waitConnected()
   await sleep(2000)
-  // 27 logged commands replay; the page answers none and reports once at the end.
+  // 29 logged commands replay; the page answers none and reports once at the end.
   const states = lines.filter(line => line.startsWith('STATE ')).length
   assert.ok(states <= 4, `${states} STATE lines while the page replayed`)
   // Only a page that replayed the log has a layer with this id.
   const again = await cmd('update_layer', { id: layerId, opacity: 0.5 })
   assert.equal(again.status, 200, again.error)
   const titles = again.state.layers.map(l => l.title)
-  assert.deepEqual(titles, ['Results', 'Notes', 'Cities', 'Cities (GDAL)', 'Cities (3857)'])
+  assert.deepEqual(titles, ['Cities (3857)', 'Results', 'Cities', 'Cities (GDAL)', 'Notes'])
   await page.close()
 })
 
