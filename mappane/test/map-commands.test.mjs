@@ -100,6 +100,35 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   assert.deepEqual(featureSet.features, [{ geometry: { x: 1, y: 2 }, attributes: { __oid: 1 } }]);
 });
 
+test("a login that arrives expired renews the token before it answers; a renewal with no lifetime is refused", async (t) => {
+  const previous = { arcgis: globalThis.$arcgis, fetch: globalThis.fetch, error: console.error };
+  t.after(() => { globalThis.$arcgis = previous.arcgis; globalThis.fetch = previous.fetch; console.error = previous.error; });
+  const registered = [];
+  globalThis.$arcgis = { import: async () => ({ registerToken: ({ token }) => registered.push(token) }) };
+  let answer = { access_token: "new", expires_in: 3600 };
+  let calls = 0;
+  globalThis.fetch = async (url, { body }) => {
+    calls++;
+    assert.equal(url, "https://portal.example.com/sharing/rest/oauth2/token");
+    assert.equal(body.get("refresh_token"), "r");
+    return { status: 200, json: async () => answer };
+  };
+  const login = { command: "login", portalUrl: "https://portal.example.com", clientId: "c", token: "old", userId: "u", refreshToken: "r", expires: Date.now() - 1000 };
+  await runMapCommand({}, login);
+  assert.deepEqual(registered, ["old", "new"]);
+  // No expires_in: the old code set a NaN timer, which fires at once and repeats.
+  const errors = [];
+  console.error = (...parts) => errors.push(parts.join(" "));
+  answer = { access_token: "newer" };
+  await runMapCommand({}, login);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(registered, ["old", "new", "old"]);
+  assert.equal(calls, 2, "one renewal for each login, no retry loop");
+  assert.match(errors[0], /token refresh failed/);
+  // Leaves no timer behind for the tests that follow.
+  await runMapCommand({}, { ...login, refreshToken: undefined, expires: Date.now() + 3_600_000 });
+});
+
 // Runs after the save-webmap test signed in: the sign-in is module state.
 test("after a sign-in, portal basemaps list the portal's gallery by item id", async (t) => {
   const previous = globalThis.$arcgis;

@@ -90,7 +90,7 @@ end run
 APPLESCRIPT
 fi
 
-# One map per user: show the map of a running bridge (a Claude Code mod's, or another pane's) if one answers.
+# One map per user: show the map of a running bridge (another pane's or browser's) if one answers.
 # Its start view stays; MAP_PANE_* start variables apply only to a bridge started here.
 if INFO="$(node "$DIR/cli/command.mjs" --info 2>/dev/null)"; then
   URL="$(printf '%s' "$INFO" | sed -n 's/.*"url": "\(.*\)".*/\1/p')"

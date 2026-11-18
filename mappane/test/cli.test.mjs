@@ -18,7 +18,7 @@ let bridge, url, socket;
 // Starts a bridge on a free port; resolves on its `bridge:` or `BRIDGE down` line.
 function startBridge(env = {}) {
   const child = spawn(process.execPath, [join(ROOT, "web/server.mjs"), "0"], { env: {
-    ...process.env, TMPDIR: tmp, CHROME: "/usr/bin/false", MAP_PANE_TOKEN: "mod-token", MAP_PANE_EXTENT: "", ...env,
+    ...process.env, TMPDIR: tmp, CHROME: "/usr/bin/false", MAP_PANE_TOKEN: "test-token", MAP_PANE_EXTENT: "", ...env,
   } });
   child.out = "";
   return new Promise((ok, fail) => {
@@ -89,7 +89,7 @@ function cli(args, { env = {}, stdin } = {}) {
   return { proc, out: () => stdout, err: () => stderr, exited: once(proc, "exit").then(([code]) => code) };
 }
 
-test("the socket is owner-only and needs no token; TCP control still needs the mod's token", async () => {
+test("the socket is owner-only and needs no token; TCP control needs MAP_PANE_TOKEN when set", async () => {
   assert.equal(statSync(socket).mode & 0o777, 0o600);
   const info = await request(socket, "/api/info");
   assert.equal(info.url, url);
@@ -107,7 +107,7 @@ test("the page is served as fixed files under one version; other paths are not",
   const app = await (await fetch(`${url}app.js`)).text();
   assert.match(app, /const PAGE_VERSION = '[0-9a-f]{12}'/);
   for (const file of ["map-commands.js", "commands.js", "geojson.js"]) assert.equal((await fetch(`${url}${file}`)).status, 200, file);
-  for (const path of ["server.mjs", "..%2fweb%2fserver.mjs", "viewer.mjs"]) assert.equal((await fetch(`${url}${path}`)).status, 404, path);
+  for (const path of ["server.mjs", "..%2fweb%2fserver.mjs", "..%2fcli%2fcommand.mjs"]) assert.equal((await fetch(`${url}${path}`)).status, 404, path);
 });
 
 test("the bridge serves the start view from MAP_PANE_* variables and refuses bad ones at startup", async () => {
@@ -124,6 +124,8 @@ test("CLI verbs become bridge ops; results and page errors come back", { timeout
   const data = { type: "Point", coordinates: [-77, 39] };
   const file = join(tmp, "point.geojson");
   writeFileSync(file, JSON.stringify(data));
+  const script = join(tmp, "my scripts.js"); // a space in the name
+  writeFileSync(script, "return 1");
   const cases = [
     [["extent"], { op: "extent", args: {} }],
     [["zoom", "L3"], { op: "zoom", args: { layer: "L3" } }],
@@ -141,6 +143,11 @@ test("CLI verbs become bridge ops; results and page errors come back", { timeout
     [["graphics", file, "--title", "Points"], { op: "graphics", args: { data, title: "Points" } }],
     [["graphics", "-", "--title", "Piped"], { op: "graphics", args: { data, title: "Piped" } }, JSON.stringify(data)],
     [["save-webmap", "My map"], { op: "save_webmap", args: { title: "My map" } }],
+    [["js", "return view.zoom", "--read-only", "--timeout", "5000"], { op: "run_js", args: { code: "return view.zoom", timeoutMs: 5000, readOnly: true } }],
+    [["js", "map.removeAll()"], { op: "run_js", args: { code: "map.removeAll()" } }],
+    [["js", script, "--read-only"], { op: "run_js", args: { code: "return 1", readOnly: true } }],
+    [["js", "-"], { op: "run_js", args: { code: "return 2" } }, "return 2"],
+    [["js", "return a .js"], { op: "run_js", args: { code: "return a .js" } }],
   ];
   for (const [args, expected, stdin] of cases) {
     const run = cli(args, { stdin });

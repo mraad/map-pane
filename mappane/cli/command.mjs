@@ -67,11 +67,19 @@ export function toOp(command) {
     case "geojson": return { op: "add_layer", args: { type: "geojson", url: input.url, zoomTo: false } };
     case "geopackage": return { op: "geopackage", args: input };
     case "graphics": return { op: "graphics", args: input };
+    case "js": {
+      const args = { code: input.code, ...(input.readOnly && { readOnly: true }) };
+      if (input.timeout !== undefined) {
+        args.timeoutMs = Number(input.timeout);
+        if (!(args.timeoutMs >= 1000 && args.timeoutMs <= 60000)) throw new Error("--timeout must be between 1000 and 60000 ms");
+      }
+      return { op: "run_js", args };
+    }
     default: throw new Error(`Unknown map command: ${name}`);
   }
 }
 
-const FLAGS = { graphics: ["title", "renderer", "labels"], "update-layer": ["title", "renderer", "labels", "filter", "opacity", "visible"], login: ["portal-url", "client-id", "redirect-uri"] };
+const FLAGS = { graphics: ["title", "renderer", "labels"], "update-layer": ["title", "renderer", "labels", "filter", "opacity", "visible"], login: ["portal-url", "client-id", "redirect-uri"], js: ["timeout"] };
 const LOGIN_WAIT = 5 * 60_000;
 
 // OAuth 2.0 authorization code with PKCE (public client, no secret) and a loopback redirect.
@@ -130,7 +138,7 @@ async function signIn({ portalUrl, clientId, redirectUri }) {
 async function main() {
   const [name, ...args] = process.argv.slice(2);
   if (!name || name === "--help") {
-    console.log(`Usage: bin/map-command <command>\n${HELP.replace("<GeoJSON>", "<file | - | inline JSON>").replaceAll("<JSON>", "<file | inline JSON>")}\n\nTargets the newest map. Set MAP_PANE_SOCKET to choose another map.\nbin/map-command --info prints the page URL of the map it targets.`);
+    console.log(`Usage: bin/map-command <command>\n${HELP.replace("<GeoJSON>", "<file | - | inline JSON>").replaceAll("<JSON>", "<file | inline JSON>").replace("<code>", "<file.js | - | inline code>")}\n\nTargets the newest map. Set MAP_PANE_SOCKET to choose another map.\nbin/map-command --info prints the page URL of the map it targets.`);
     return;
   }
   const options = {};
@@ -145,11 +153,21 @@ async function main() {
     const value = options[flag];
     if (value) options[flag] = JSON.parse(/^\s*[[{]/.test(value) ? value : await readFile(value, "utf8"));
   }
+  // The only flag without a value: the code only reads the map, so the bridge does not replay it.
+  if (name === "js" && args.includes("--read-only")) {
+    args.splice(args.indexOf("--read-only"), 1);
+    options.readOnly = true;
+  }
   let text = args.join(" ");
   if (name === "graphics" && !text.trimStart().startsWith("{")) {
     if (!text || text === "-") {
       text = await readText(process.stdin);
     } else text = await readFile(text, "utf8");
+  }
+  // js: standard input, a .js/.mjs file (a name with spaces must exist: code can end in ".js" too), or the code itself.
+  if (name === "js") {
+    if (!text || text === "-") text = await readText(process.stdin);
+    else if (/\.m?js$/.test(text) && (!/\s/.test(text) || (await stat(text).catch(() => null))?.isFile())) text = await readFile(text, "utf8");
   }
   // The page cannot write files: the CLI keeps the screenshot path and writes the PNG itself.
   // login flags configure the sign-in here; they are not sent to the page.
@@ -172,7 +190,7 @@ async function main() {
         if (process.env.MAP_PANE_SOCKET || !["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
       }
     }
-    throw Object.assign(new Error("No running map found. Start bin/map-pane --split first (or /map in Claude Code)."), { noMap: true });
+    throw Object.assign(new Error("No running map found. Start bin/map-pane --split (or --browser) first."), { noMap: true });
   };
   if (name === "--info") {
     console.log(JSON.stringify(await send("/api/info"), null, 2));

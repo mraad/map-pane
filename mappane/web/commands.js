@@ -14,7 +14,8 @@ feature-service <url>
 geojson <url>
 geopackage <url> [table]
 graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>]
-save-webmap <title>`;
+save-webmap <title>
+js <code> [--timeout <ms>] [--read-only]`;
 export const COMMANDS = HELP.split("\n").map((line) => line.split(" ")[0]);
 
 // All 2D basemap ids the SDK accepts. Legacy ids need no sign-in; keyless ids are Esri raster tiles (app.js KEYLESS).
@@ -141,6 +142,7 @@ export function parseCommand(text) {
     const [, url, table] = value.match(/^(\S+)(?:\s+([\s\S]+))?$/);
     return { command, url: httpUrl(url), ...(table && { table }) };
   }
+  if (command === "js" && value.trim()) return { command, code: value };
   if (command === "graphics" && value) return { command, data: JSON.parse(value) };
   throw new Error(`Expected a command:\n${HELP}`);
 }

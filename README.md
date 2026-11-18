@@ -3,12 +3,8 @@
 A live web map that an agent drives from the terminal. The map is built on the ArcGIS Maps SDK for JavaScript 5.2.2.
 Headless Chrome draws the map. A terminal pane shows it, and takes your mouse and keys.
 
-You can use it in two ways. Both drive the same map:
-
-| Use | Agent | Pane | Guide |
-|---|---|---|---|
-| Claude Code mod | Claude Code (tools `mcp__mappane__*`, command `/map`) | Claude Code side pane, or a browser window | [docs/mod.md](docs/mod.md) |
-| Standalone | Codex, Pi, Claude Code, or you (the `map-pane` skill and `mappane/bin/map-command`) | Ghostty split (Kitty graphics), or any browser | [docs/standalone.md](docs/standalone.md) |
+Claude Code, Codex and Pi use one skill, `map-pane`, which runs the CLI `mappane/bin/map-command`. You can run the CLI too.
+The map shows in a Ghostty split (Kitty graphics) or in any browser. Guide: [docs/standalone.md](docs/standalone.md). Full manual (HTML, images inline): [docs/guide.html](docs/guide.html).
 
 ![The map in a Ghostty split](docs/img/ghostty-split.jpg)
 
@@ -20,6 +16,7 @@ You can use it in two ways. Both drive the same map:
 - Changes the basemap: keyless basemaps, all legacy ids, and basemap styles after a sign-in.
 - Signs in to a portal (OAuth with PKCE) and saves the map as a private web map item.
 - Saves a PNG screenshot.
+- Runs JavaScript in the map page (`map-command js`), for queries, statistics, calculated renderers, popups and geometry operations: [docs/run-js.md](docs/run-js.md).
 
 The legend shows at the bottom right while the map has layers. It hides when the map is empty.
 
@@ -29,21 +26,21 @@ The legend shows at the bottom right while the map has layers. It hides when the
 
 - macOS, Node.js 24 or later, and Google Chrome. No npm packages.
 - Network access to `js.arcgis.com` and to the basemap tile servers.
-- Mod: Claude Code v2.1.287 or later.
 - Ghostty split: Ghostty 1.4 or later.
 
 ## Quick start
 
-Claude Code mod:
+Claude Code, from any folder:
 
 ```
-/plugin install mappane --marketplace mraad/map-pane
-/map
+/plugin install map-pane --marketplace mraad/map-pane
+/map-pane:map-pane go to Kuwait City and add examples/cities.geojson
 ```
 
-Then ask Claude, for example: "go to Kuwait City and add examples/cities.geojson".
+In a clone of this repository, Claude Code finds the skill without an install: `/map-pane go to Kuwait City`.
+Or ask in plain words.
 
-Standalone, from the repository folder:
+The CLI, from the repository folder:
 
 ```sh
 mappane/bin/map-pane --split                       # open the map in a Ghostty split
@@ -69,14 +66,13 @@ pi -p '/skill:map-pane go to Austin, Texas'
 ## One map, many doors
 
 ```
-Claude Code mod ──TCP + token──┐
-                               ├──> bridge (mappane/web/server.mjs) ──SSE──> every open map page
-bin/map-command ──Unix socket──┘          keeps a log, replays it              (mod pane, Ghostty pane, browser)
+skill ──> bin/map-command ──Unix socket──> bridge (mappane/web/server.mjs) ──SSE──> every open map page
+                                                keeps a log, replays it              (Ghostty pane, browser)
 ```
 
 The bridge keeps a log of the map changes and replays it to each page that opens.
-All pages show the same map. With the mod running, the CLI and the skill drive the mod's map.
-Details: [docs/architecture.md](docs/architecture.md).
+All pages show the same map. The log lives in memory: a new bridge starts with an empty map.
+Details: [docs/architecture.md](docs/architecture.md). JavaScript in the map: [docs/run-js.md](docs/run-js.md).
 
 ## Environment variables
 
@@ -96,23 +92,20 @@ All are optional, except `MAP_PANE_CLIENT_ID` for `login`.
 | `MAP_PANE_REDIRECT_URI` | `http://127.0.0.1:8766/` | `login` | OAuth redirect URI. It must be registered on the client ID. |
 | `MAP_PANE_OPEN` | on | `login` | `0` stops `login` from opening the browser on macOS. |
 | `MAP_PANE_TIMEOUT_MS` | `15000` | bridge | Command timeout. Adding data waits 60 s. |
-| `MAP_PANE_IDLE_MS` | `90000` | bridge | The pane's Chrome stops after this time with no pane input. |
-| `MAP_PANE_FAILURE_WINDOW_MS` | `60000` | bridge | Chrome failures closer together than this count toward the limit of 3 restarts. |
-| `MAP_PANE_TOKEN` | none | bridge | Token for the TCP control endpoints. The mod sets it. |
-| `MAP_PANE_SESSION` | none | bridge | Saves the map log and view in `~/.claude/map-pane/sessions/<id>/`. The mod sets it. |
+| `MAP_PANE_TOKEN` | none | bridge | When set, the TCP control endpoints (`/cmd`, `/clear`) need it in `x-map-pane-token`. The socket never does. |
 
 ## Test
 
 ```sh
 npm test                          # every suite (some need Chrome and network access)
-claude plugin validate mappane
-claude plugin test mappane        # the mod's hooks
+claude plugin validate .
 ```
 
 ## History
 
 This repository replaces two repositories, which are now deprecated:
 `mraad/claude-mod-map` (the Claude Code mod) and `mraad/ghostty-map-pane` (the Ghostty pane and CLI).
+Version 0.5.0 removed the Claude Code mod (`mappane`, `/map`, tools `mcp__mappane__*`): Claude Code now uses the skill, like Codex and Pi.
 
 ## License
 
