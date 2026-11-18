@@ -30,10 +30,14 @@ All paths in this guide start at the repository folder.
 ```sh
 mappane/bin/map-pane --split   # open a split to the right of the terminal that ran it
 mappane/bin/map-pane           # run in the current terminal
+mappane/bin/map-pane --browser # open the map in the default browser
 ```
 
 `mappane/bin/map-pane` first looks for a running map bridge of your user, for example the Claude Code mod's bridge.
 If one answers, the pane shows that map. If none answers, the launcher starts a bridge on a free port.
+
+With `--browser`, the launcher opens the map page in the default browser and prints `{"url": ...}`.
+If no bridge answers, it starts one in the background. That bridge continues after the launcher stops.
 
 ## 3. Use the pane
 
@@ -54,6 +58,11 @@ A zoom widget shows at the top left. The legend shows at the bottom right while 
 
 The pane restores the terminal and stops its Chrome. If the launcher started the bridge, it stops the bridge too.
 A bridge that was already running (for example the mod's) continues. Ghostty closes the split.
+
+To stop a map that you opened with `--browser`, type `mappane/bin/map-pane --close`.
+The command stops the bridge that `--browser` started and closes the map tabs in Google Chrome.
+Tabs in other browsers stay open and show that the connection is lost.
+If `--browser` did not start a bridge (for example, it used the mod's bridge), the command stops nothing and exits with status 1.
 
 ## 5. Map commands
 
@@ -278,7 +287,7 @@ The start-view variables apply only to a bridge that the launcher starts. A bad 
 | The pane is blank. | No access to `js.arcgis.com`. | Type `npm run serve`. Open the URL in a browser and examine the console. |
 | `--split` does nothing. | macOS refused the automation permission. | System Settings, Privacy & Security, Automation: allow your terminal to control Ghostty. |
 | `No running map found` | No bridge, or another `TMPDIR`. | Start `mappane/bin/map-pane --split`, or set `MAP_PANE_SOCKET`. |
-| `No map page is open` | The bridge runs, but no page shows the map. | Start `mappane/bin/map-pane --split`, or open the `--info` URL in a browser. |
+| `No map page is open` | The bridge runs, but no page shows the map. | Start `mappane/bin/map-pane --split` or `mappane/bin/map-pane --browser`. |
 | `needs a sign-in` | A basemap style or `save-webmap` with no token | Type `mappane/bin/map-command login`. |
 | `Port 8766 is busy` | Another `login` waits. | Finish it, or use `--redirect-uri`. |
 | `connect EPERM` in Codex | The sandbox blocks the socket. | Add `-c sandbox_workspace_write.network_access=true`. |

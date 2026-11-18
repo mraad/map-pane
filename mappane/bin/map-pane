@@ -2,8 +2,59 @@
 # Show the map in this terminal (Kitty graphics); start a bridge in the background if none runs.
 #   bin/map-pane           run in the current terminal
 #   bin/map-pane --split   open a new Ghostty split to the right and run there
+#   bin/map-pane --browser open the map in the default browser; start a detached bridge if none runs
+#   bin/map-pane --close   stop the bridge that --browser started and close its Chrome tabs
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Bridge started by --browser: line 1 pid, line 2 page URL, line 3 log file.
+BROWSER_STATE="${TMPDIR:-/tmp}/map-pane-browser-$(id -u)"
+
+# Wait until the bridge that logs to $1 (pid $2) prints its URL; set URL, or report why it failed.
+wait_bridge() {
+  until URL="$(sed -n 's/^bridge: //p' "$1" | head -1)"; [ -n "$URL" ]; do
+    if grep -q '^BRIDGE down' "$1" || ! kill -0 "$2" 2>/dev/null; then
+      echo "map-pane: bridge failed:" >&2; cat "$1" >&2; return 1
+    fi
+    sleep 0.1
+  done
+}
+
+if [ "${1:-}" = "--browser" ]; then
+  if INFO="$(node "$DIR/cli/command.mjs" --info 2>/dev/null)"; then
+    URL="$(printf '%s' "$INFO" | sed -n 's/.*"url": "\(.*\)".*/\1/p')"
+  else
+    LOG="$(mktemp -t map-pane-bridge)"
+    # A new session: the bridge outlives this launcher and the agent's shell (Codex kills its process group;
+    # nohup is not enough). macOS has no setsid command, so use perl's.
+    perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' node "$DIR/web/server.mjs" "${PORT:-0}" </dev/null >"$LOG" 2>&1 &
+    BRIDGE=$!
+    wait_bridge "$LOG" "$BRIDGE" || { kill "$BRIDGE" 2>/dev/null; rm -f "$LOG"; exit 1; }
+    printf '%s\n%s\n%s\n' "$BRIDGE" "$URL" "$LOG" >"$BROWSER_STATE"
+  fi
+  # A sandbox (Codex workspace-write) can block opening apps; the map still runs at the URL.
+  open "$URL" 2>/dev/null || echo "map-pane: could not open a browser; open $URL yourself" >&2
+  echo "{\"url\": \"$URL\"}"
+  exit 0
+fi
+
+if [ "${1:-}" = "--close" ]; then
+  if [ ! -f "$BROWSER_STATE" ]; then echo "map-pane: no map was opened with --browser" >&2; exit 1; fi
+  { read -r BRIDGE; read -r URL; read -r LOG; } <"$BROWSER_STATE"
+  # Stop the pid only if it is still our bridge, not a reused pid.
+  if ps -o command= -p "$BRIDGE" 2>/dev/null | grep -q "web/server.mjs"; then
+    kill "$BRIDGE"
+    while kill -0 "$BRIDGE" 2>/dev/null; do sleep 0.1; done
+  fi
+  rm -f "$BROWSER_STATE" "$LOG"
+  # shortcut: closes tabs only in Google Chrome; other browsers keep a disconnected tab.
+  if pgrep -xq "Google Chrome"; then
+    osascript -e "tell application \"Google Chrome\" to repeat with w in windows
+      close (every tab of w whose URL starts with \"$URL\")
+    end repeat" >/dev/null 2>&1 || true
+  fi
+  echo "{\"closed\": \"$URL\"}"
+  exit 0
+fi
 
 if [ "${1:-}" = "--split" ]; then
   # Type the command into a normal shell with "exec". A surface started with
@@ -51,12 +102,7 @@ else
   # wait is last: it returns the kill status, and set -e would stop the trap there.
   trap 'rm -f "$LOG"; kill "$BRIDGE" 2>/dev/null; wait "$BRIDGE" 2>/dev/null' EXIT
   # The bridge prints its URL when it is ready, or why it could not start.
-  until URL="$(sed -n 's/^bridge: //p' "$LOG" | head -1)"; [ -n "$URL" ]; do
-    if grep -q '^BRIDGE down' "$LOG" || ! kill -0 "$BRIDGE" 2>/dev/null; then
-      echo "map-pane: bridge failed:" >&2; cat "$LOG" >&2; exit 1
-    fi
-    sleep 0.1
-  done
+  wait_bridge "$LOG" "$BRIDGE" || exit 1
 fi
 # embedded: the page hides its connection badge inside a pane.
 node "$DIR/pane/pane.mjs" "${URL}?embedded=1"
