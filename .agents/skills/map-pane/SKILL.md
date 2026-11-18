@@ -1,7 +1,7 @@
 ---
 name: map-pane
 description: Open, control and close a live web map (Ghostty split, browser, or the Claude Code mod's map) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove or restyle a layer, clear the map, save a web map, or take a screenshot of a running map.
-argument-hint: "open | close | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id | title] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title>"
+argument-hint: "open [browser] | close [browser] | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id | title] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title>"
 ---
 
 # Map pane
@@ -20,6 +20,8 @@ Opening a split also needs macOS, Ghostty and Chrome.
   `-c sandbox_workspace_write.network_access=true`, for example
   `codex exec -s workspace-write -c sandbox_workspace_write.network_access=true '$map-pane get the extent'`.
   The same setting lets `login` listen on its loopback redirect and reach the portal.
+  The sandbox also blocks opening a browser: `--browser` then prints `could not open a browser` and the URL.
+  The map still runs; give the URL to the user.
 
 ## Open and select the map
 
@@ -30,7 +32,11 @@ Opening a split also needs macOS, Ghostty and Chrome.
    If another map answers, confirm with the user that it is the intended map before you change it.
 3. Retry `extent` for at most 60 seconds. Report startup errors; do not open repeated splits.
 
-Do not run `scripts/map-pane` without `--split`: it takes over the current terminal in raw mode.
+To show the map in the browser instead (asked for, or no Ghostty), run `scripts/map-pane --browser`.
+It opens the page of the running map, or starts a detached bridge first, and prints `{"url": ...}`.
+Then retry `extent` as in step 3.
+
+Do not run `scripts/map-pane` without `--split` or `--browser`: it takes over the current terminal in raw mode.
 An extent has bounds and a spatial reference; the coordinates are not necessarily longitude/latitude.
 
 Start view, set on the launcher (for example `MAP_PANE_CENTER=51.5074,-0.1278 MAP_PANE_ZOOM=10 scripts/map-pane --split`):
@@ -122,6 +128,10 @@ More: `../../../docs/standalone.md` (guide), `../../../docs/architecture.md`.
 
 ## Close the map
 
-There is no close command. Send Ctrl-C to the intended map split, or SIGINT to that split's `pane.mjs` process.
+A map opened with `--browser`: run `scripts/map-pane --close`. It stops the bridge that `--browser` started and
+closes its Google Chrome tabs (tabs in other browsers stay, disconnected). It never stops a bridge it did not start,
+such as the Claude Code mod's; then it exits 1 with `no map was opened with --browser`.
+
+A split: there is no close command. Send Ctrl-C to the intended map split, or SIGINT to that split's `pane.mjs` process.
 The launcher closes the split, and stops the bridge if it started one (a running bridge, such as the Claude Code mod's, stays). Identify the exact PID first; broad Node or Chrome
 matches can kill unrelated work.

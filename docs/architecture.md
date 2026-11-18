@@ -13,7 +13,7 @@ shell/agent ── bin/map-command (cli/command.mjs) ──socket─┘     │ 
                                      └─ browser: /map browser (Chrome app window) or any tab
 ```
 
-- **Bridge** (`web/server.mjs`): one process. The mod starts it on port 8765 at `session.start`, with `MAP_PANE_TOKEN` and `MAP_PANE_SESSION`. `bin/map-pane` starts one on port 0 when no bridge answers. It also listens on a Unix socket, `<tmpdir>/map-pane-command-<uid>-<pid>.sock`, mode 0600.
+- **Bridge** (`web/server.mjs`): one process. The mod starts it on port 8765 at `session.start`, with `MAP_PANE_TOKEN` and `MAP_PANE_SESSION`. `bin/map-pane` starts one on port 0 when no bridge answers (detached with `--browser`, stopped by `--close`). It also listens on a Unix socket, `<tmpdir>/map-pane-command-<uid>-<pid>.sock`, mode 0600.
 - **Pages**: any number. Each reads commands from `GET /events` (SSE) and runs them one at a time.
 - **CLI** (`cli/command.mjs`): parses the ghostty-style verbs (`web/commands.js`), turns them into `{op, args}` (`toOp`), and posts them to the newest socket. `login` runs the PKCE flow in the CLI and sends the token as a `login` op.
 

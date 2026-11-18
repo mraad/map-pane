@@ -47,6 +47,7 @@ Standalone, from the repository folder:
 
 ```sh
 mappane/bin/map-pane --split                       # open the map in a Ghostty split
+mappane/bin/map-pane --browser                     # or in the default browser (--close stops it)
 mappane/bin/map-command go_to location 'Paris, France'
 mappane/bin/map-command graphics examples/cities.geojson --title Cities --renderer examples/population-renderer.json
 ```
