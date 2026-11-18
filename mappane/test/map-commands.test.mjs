@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { portalBasemaps, runMapCommand } from "../web/map-commands.js";
+import { bridgeFileLayers, portalBasemaps, portalItem, runMapCommand } from "../web/map-commands.js";
 
 test("portal basemaps need a sign-in", async () => {
+  assert.deepEqual(portalItem("item"), { id: "item" });
   assert.equal(await portalBasemaps(), undefined);
 });
 
@@ -63,6 +64,9 @@ test("graphics preserve properties while assigning unique safe field names", asy
 test("save-webmap needs a sign-in, saves service layers with saveAs and embeds client-side layers in map order", async (t) => {
   const previous = globalThis.$arcgis;
   t.after(() => { globalThis.$arcgis = previous; });
+  const previousLocation = globalThis.location;
+  globalThis.location = new URL("http://127.0.0.1:12345/");
+  t.after(() => { if (previousLocation) globalThis.location = previousLocation; else delete globalThis.location; });
   const json = (value) => ({ toJSON: () => value, clone: () => value });
   const local = { id: "local", title: "Wells", type: "feature", opacity: 1, visible: true, geometryType: "point", objectIdField: "__oid",
     fields: [json({ name: "__oid", type: "esriFieldTypeOID" })], renderer: json({ type: "simple" }), definitionExpression: "__oid > 1",
@@ -88,6 +92,13 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   await runMapCommand(view, { command: "login", portalUrl: "https://portal.example.com/", clientId: "c", token: "t", expires: Date.now() + 3_600_000, userId: "me" });
   layers = [{ title: "Mixed", type: "graphics" }];
   await assert.rejects(runMapCommand(view, input), /Mixed has mixed geometry/);
+  assert.deepEqual(portalItem("item"), { id: "item", portal: { url: "https://portal.example.com" } });
+  layers = [{ title: "Stations", type: "parquet" }];
+  bridgeFileLayers.add(layers[0]);
+  await assert.rejects(runMapCommand(view, input), /local bridge: Stations/);
+  layers = [{ title: "Sites", type: "csv", url: "/files/key/sites.csv" }];
+  await assert.rejects(runMapCommand(view, input), /local bridge: Sites/);
+  assert.equal(created, undefined);
   layers = [local, service];
   assert.deepEqual(await runMapCommand(view, input), {
     id: "item1", title: "Wells", owner: "me", access: "private", layers: 2, url: "https://portal.example.com/home/item.html?id=item1",
@@ -114,17 +125,15 @@ test("a login that arrives expired renews the token before it answers; a renewal
     return { status: 200, json: async () => answer };
   };
   const login = { command: "login", portalUrl: "https://portal.example.com", clientId: "c", token: "old", userId: "u", refreshToken: "r", expires: Date.now() - 1000 };
-  await runMapCommand({}, login);
-  assert.deepEqual(registered, ["old", "new"]);
+  const result = await runMapCommand({}, login);
+  assert.ok(Date.parse(result.expires) > Date.now());
+  assert.deepEqual(registered, ["new"]);
   // No expires_in: the old code set a NaN timer, which fires at once and repeats.
-  const errors = [];
-  console.error = (...parts) => errors.push(parts.join(" "));
   answer = { access_token: "newer" };
-  await runMapCommand({}, login);
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.deepEqual(registered, ["old", "new", "old"]);
+  await assert.rejects(runMapCommand({}, login), /Token refresh failed/);
+  await assert.rejects(runMapCommand({}, { ...login, refreshToken: undefined }), /Token expired/);
+  assert.deepEqual(registered, ["new"]);
   assert.equal(calls, 2, "one renewal for each login, no retry loop");
-  assert.match(errors[0], /token refresh failed/);
   // Leaves no timer behind for the tests that follow.
   await runMapCommand({}, { ...login, refreshToken: undefined, expires: Date.now() + 3_600_000 });
 });

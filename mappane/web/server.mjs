@@ -154,6 +154,12 @@ async function prepare(cmd) {
   return { op: cmd.op, args }
 }
 
+const noPage = res => json(res, 503, {
+  ok: false, noPage: true,
+  error: `No map page is open. Run bin/map-pane --split, or open http://${HOST}/.`,
+  state: snapshot(),
+})
+
 const handler = async (req, res) => {
   try {
     // A Unix socket request has no remote address: its caller is the socket's owner.
@@ -193,7 +199,7 @@ const handler = async (req, res) => {
       const isKnown = lastEpoch === epoch && Number(lastN) < nextId
       if (!isKnown) sse(res, { op: 'reset' }, false)
       // Before the log: a logged basemap style or portal layer needs the token to replay.
-      if (!isKnown && lastLogin) sse(res, { op: 'login', args: lastLogin, replay: true }, false)
+      if (lastLogin && (!isKnown || Number(lastN) < lastLogin.id)) sse(res, { op: 'login', args: lastLogin.args, replay: true }, false)
       for (const entry of log) {
         if (isKnown && entry.id <= Number(lastN)) continue
         // A pending run_js may be freezing its page: a new page must not run it too.
@@ -252,19 +258,16 @@ const handler = async (req, res) => {
     if (req.method === 'POST' && req.url === '/cmd') {
       const cmd = await body(req)
       if (typeof cmd.op !== 'string') return json(res, 400, { ok: false, error: 'op missing' })
-      if (tabs.size === 0) {
-        return json(res, 503, {
-          ok: false,
-          noPage: true,
-          error: `No map page is open. Run bin/map-pane --split, or open http://${HOST}/.`,
-          state: snapshot(),
-        })
-      }
+      if (!tabs.size) return noPage(res)
       let entry
       try {
         entry = await prepare(cmd)
       } catch (err) {
         return json(res, 400, { ok: false, error: err.message, state: snapshot() })
+      }
+      if (!tabs.size) {
+        forget(entry.args.path)
+        return noPage(res)
       }
       // Preparation can finish out of order: replay ids must follow delivery order.
       entry.id = nextId++
@@ -326,7 +329,7 @@ const handler = async (req, res) => {
         forget(entry.args.path)
       }
       // Kept in memory only (never in the log or on disk), so a page that opens later is signed in too.
-      if (ack.ok && entry.op === 'login') lastLogin = entry.args
+      if (ack.ok && entry.op === 'login') lastLogin = entry
       let { result } = ack
       if (ack.ok && cmd.op === 'screenshot' && typeof result?.dataUrl === 'string') {
         const path = join(DATA, `map-${new Date().toISOString().replace(/[:.]/g, '-')}.png`)

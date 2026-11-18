@@ -27,7 +27,11 @@ export function toGraphics(data, spatialReference = { wkid: 4326 }) {
     if (!Array.isArray(coords) || !coords.length) throw new Error("Polygon needs an exterior ring");
     return coords.map((coords, index) => {
       const ring = line(coords, true);
-      const area = ring.slice(1).reduce((a, p, i) => a + ring[i][0] * p[1] - p[0] * ring[i][1], 0);
+      let area = 0;
+      for (let i = 1; i < ring.length; i++) {
+        const [x, y] = ring[i - 1];
+        area = area + x * ring[i][1] - ring[i][0] * y;
+      }
       // ArcGIS expects clockwise exteriors and counterclockwise holes.
       return (area > 0) === (index === 0) ? ring.reverse() : ring;
     });
@@ -60,7 +64,8 @@ export function toGraphics(data, spatialReference = { wkid: 4326 }) {
       case "MultiPolygon": shape = { type: "polygon", rings: list(c).flatMap(polygon) }; break;
       default: throw new Error(`Unsupported GeoJSON geometry: ${geometry.type}`);
     }
-    const points = shape.points ?? shape.paths?.flat() ?? shape.rings?.flat();
+    // Each path and ring already has uniform dimensions. Compare their first positions.
+    const points = shape.points ?? (shape.paths ?? shape.rings)?.map((part) => part[0]);
     if (points) {
       if (points.some((p) => p.length !== points[0].length)) throw new Error("Coordinate dimensions must match");
       shape.hasZ = points[0].length === 3;

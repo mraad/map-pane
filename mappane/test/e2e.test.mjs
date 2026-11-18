@@ -308,6 +308,14 @@ test("login registers the token with the SDK for the portal", async () => {
   assert.equal(typeof list.portalError, "string");
 });
 
+test("saving a web map refuses a bridge-served layer before contacting the portal", async () => {
+  const socket = commandSocket(server.pid);
+  await sendCommand(socket, { op: "add_layer", args: {
+    type: "geojson", path: join(ROOT, "../examples/cities.geojson"), title: "Local cities", zoomTo: false,
+  } });
+  await assert.rejects(command({ command: "save-webmap", title: "Local map" }), /local bridge: Local cities/);
+});
+
 test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {
   const op = (name, args = {}) => sendCommand(commandSocket(server.pid), { op: name, args });
   await request(commandSocket(server.pid), "/clear", {}); // only this test's layers count for zoom-all
