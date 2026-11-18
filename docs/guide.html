@@ -449,7 +449,7 @@ return { layerId, rings: rings.graphics.length, cities: features.map(f =&gt; f.a
     <tr><td class="wrap"><code>code must be a non-empty string</code></td><td>No code arrived.</td><td>Give the code, a <code>.js</code> file or <code>-</code>.</td></tr>
     <tr><td class="wrap"><code>the code did not finish in &lt;n&gt; ms</code></td><td>The deadline passed.</td><td>Increase <code>--timeout</code>, make the query smaller, or give <code>signal</code>. Examine the map first.</td></tr>
     <tr><td class="wrap"><code>the code did not start: it waited &lt;n&gt; ms behind other map commands</code></td><td>An earlier command was still running. The code did not run.</td><td>Send it again after the earlier command completes.</td></tr>
-    <tr><td class="wrap"><code>the map page did not answer in 65000 ms</code></td><td>The code blocked the page.</td><td>Reload the page. Correct the code.</td></tr>
+    <tr><td class="wrap"><code>the map page did not answer in 65000 ms</code></td><td>The code blocked the page.</td><td>Reload the browser tab. The bridge replays the map. If you close a split that started its own bridge, the map is lost. Correct the code.</td></tr>
     <tr><td class="wrap"><code>... is not defined</code></td><td>The code has an error.</td><td>Correct the code. Send it again.</td></tr>
   </tbody>
 </table></div>
@@ -570,6 +570,8 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
 <ul>
   <li>The bridge gives each logged layer the id <code>L&lt;n&gt;</code> (<code>L&lt;n&gt;-&lt;i&gt;</code> for a <code>graphics</code> op with many tables). The ids are the same on each page.</li>
   <li>A command that timed out stays in the log, because a page can still complete it. A <code>run_js</code> command that timed out leaves the log, because it blocked its page.</li>
+  <li>A live command carries <code>expiresAt</code>, the bridge deadline. The page stops <code>run_js</code> code 2 s before that time.</li>
+  <li>A page that connects while a <code>run_js</code> command is pending does not get that command in its replay.</li>
   <li>Inline GeoJSON and screenshots go to a temporary folder. The bridge deletes the folder when it stops.</li>
   <li>The bridge hashes the page files into a page version. A page with a different version reloads itself.</li>
 </ul>

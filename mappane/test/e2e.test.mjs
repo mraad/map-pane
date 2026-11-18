@@ -343,8 +343,14 @@ test("run_js answers the value and console, fails with the code's error, stops a
     console.log(im.credentials[0].token); return { token: im.credentials[0].token }`);
   assert.deepEqual(leak, { value: { token: "[redacted]" }, console: ["[redacted]"] });
   assert.equal((await js("return 'x'.repeat(70000)")).value.truncated, true);
-  // The deadline counts from arrival: code that waited past it behind another command fails and never starts,
-  // so the bridge (whose timer also starts at arrival) never drops code that then runs.
+  // Synchronous work past the deadline fails, though the timer never got a turn.
+  await assert.rejects(js("const t = Date.now(); while (Date.now() - t < 1500) {} return 1", { timeoutMs: 1000 }), /did not finish in 1000 ms/);
+  // A late script logs into its own console, not into the answer of the next one.
+  await assert.rejects(js("setTimeout(() => console.log('late'), 1300); await new Promise(() => {})", { timeoutMs: 1000 }), /did not finish/);
+  const next = js("await new Promise((done) => setTimeout(done, 600)); return 'next'");
+  assert.deepEqual(await next, { value: "next" });
+  // The deadline counts from arrival, capped before the bridge's deadline (its timer starts at dispatch):
+  // code that waited past it behind another command fails and never starts, so the bridge never drops code that then runs.
   const slow = js("await new Promise((done) => setTimeout(done, 1500)); return 'slow'");
   await new Promise((done) => setTimeout(done, 200)); // the slow one reaches the page first
   const waited = js("window.ranLate = true", { timeoutMs: 1000 });

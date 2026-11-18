@@ -226,7 +226,7 @@ The `map-pane` skill tells the agent to use `scripts/map-command js`. Ask in pla
 | `code must be a non-empty string` | No code arrived. | Give the code, a `.js` file or `-`. |
 | `the code did not finish in <n> ms` | The deadline passed. | Increase `--timeout`, make the query smaller, or pass `signal`. Examine the map first: the code can still complete. |
 | `the code did not start: it waited <n> ms behind other map commands` | An earlier command was still running when the deadline passed. The code did not run. | Send it again, after the earlier command completes. |
-| `the map page did not answer in 65000 ms: the code blocks the page ...` | The code never gave control back, for example a loop that never ends. The code is not saved. | Reload the page (close and open the split, or reload the browser tab). The bridge replays the map. Correct the code. |
+| `the map page did not answer in 65000 ms: the code blocks the page ...` | The code never gave control back, for example a loop that never ends. The code is not saved. | Reload the browser tab: the bridge keeps running and replays the map. A split that started its own bridge stops that bridge when you close it, and the map is lost: rebuild the map in the new split. Correct the code. |
 | `Unexpected token ...`, `... is not defined` | The code has an error. | Correct the code. Send it again. |
 | `No map page is open` | No page shows the map. | Open the map: `mappane/bin/map-pane --split` or `--browser`. |
 

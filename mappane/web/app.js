@@ -323,34 +323,38 @@ const ops = {
 
   // The body of an async function with view, map, layerId and signal in scope. Its return value and
   // console lines answer; a throw or the deadline fails the command (the bridge then drops it from the log).
-  async run_js({ code, timeoutMs }, { layerId, replay, at }) {
+  async run_js({ code, timeoutMs }, { layerId, replay, at, expiresAt }) {
     if (typeof code !== 'string' || !code.trim()) throw new Error('code must be a non-empty string')
     const ms = Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 60000)
-    // The deadline counts from arrival, like the bridge's own timer: code that waited too long behind other
-    // commands does not start, so the bridge never drops code that then runs. A replay has no one waiting.
-    const left = replay ? ms : ms - (performance.now() - at)
+    // The deadline counts from arrival, capped 2 s before the bridge's own deadline (sent at dispatch), so the
+    // bridge never drops code that then runs: code that waited too long does not start. A replay has no one waiting.
+    const left = replay ? ms : Math.min(ms - (performance.now() - at), Number.isFinite(expiresAt) ? expiresAt - 2000 - Date.now() : Infinity)
     if (left <= 0) throw new Error(`the code did not start: it waited ${ms} ms behind other map commands. Send it again`)
+    const deadline = Date.now() + left
     const lines = []
-    const real = { log: console.log, warn: console.warn, error: console.error }
+    let settled = false
+    // The code gets its own console: a late script cannot write into the answer of the next one.
     // A replay answers no one: its console stays the page's own.
-    if (!replay) {
-      console.log = console.warn = console.error = (...parts) => {
-        if (lines.length < JS_MAX_LINES) lines.push(redact(parts.map(p => (typeof p === 'string' ? p : toJson(p))).join(' ')).slice(0, 2000))
-      }
+    const capture = (...parts) => {
+      if (!settled && lines.length < JS_MAX_LINES) lines.push(redact(parts.map(p => (typeof p === 'string' ? p : toJson(p))).join(' ')).slice(0, 2000))
     }
+    const scoped = replay ? console : Object.assign(Object.create(console), { log: capture, warn: capture, error: capture })
     const stop = new AbortController()
+    const late = () => new Error(`the code did not finish in ${ms} ms`)
     let timer
     try {
       const value = await Promise.race([
-        new AsyncFunction('view', 'map', 'layerId', 'signal', code)(view, map, layerId, stop.signal),
+        new AsyncFunction('view', 'map', 'layerId', 'signal', 'console', code)(view, map, layerId, stop.signal, scoped),
         new Promise((_, reject) => {
           timer = setTimeout(() => {
-            const late = new Error(`the code did not finish in ${ms} ms`)
-            stop.abort(late) // code that passes `signal` to fetch or the SDK stops; other code runs on unseen
-            reject(late)
+            const error = late()
+            stop.abort(error) // code that passes `signal` to fetch or the SDK stops; other code runs on unseen
+            reject(error)
           }, left)
         }),
       ])
+      // Synchronous work can pass the deadline before the timer gets a turn.
+      if (!replay && Date.now() > deadline) throw late()
       const result = {}
       if (value !== undefined) {
         const text = redact(toJson(value))
@@ -362,8 +366,8 @@ const ops = {
       // The console lines travel with the error: they often say why the code failed.
       throw new Error(redact([String(err?.message ?? err), ...lines.map(line => `console: ${line}`)].join('\n')).slice(0, 8000))
     } finally {
+      settled = true
       clearTimeout(timer)
-      Object.assign(console, real)
     }
   },
 
@@ -379,10 +383,10 @@ const post = (path, body) =>
 
 // One command at a time, in the order sent: a replay must rebuild the map exactly.
 let queue = Promise.resolve()
-async function handle({ id, op, args, layerId, replay, tab }, at) {
+async function handle({ id, op, args, layerId, replay, tab, expiresAt }, at) {
   try {
     if (!ops[op]) throw new Error(`unknown op: ${op}`)
-    const result = await ops[op](args ?? {}, { layerId, replay, at })
+    const result = await ops[op](args ?? {}, { layerId, replay, at, expiresAt })
     // A replay is not answered: the bridge waits for no one, and one /state follows the whole replay.
     if (id != null && !replay) await post('/ack', { id, tab, ok: true, result })
   } catch (err) {

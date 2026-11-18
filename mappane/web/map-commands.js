@@ -18,7 +18,8 @@ async function login(IdentityManager, { portalUrl, clientId, token, expires, use
   if (refreshToken) {
     const refresh = async () => {
       try {
-        const response = await fetch(`${server}/oauth2/token`, { method: "POST", body: new URLSearchParams({
+        // Bounded: a replayed login waits for it, and every later command waits behind that login.
+        const response = await fetch(`${server}/oauth2/token`, { method: "POST", signal: AbortSignal.timeout(15_000), body: new URLSearchParams({
           grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken, f: "json",
         }) });
         const result = await response.json();

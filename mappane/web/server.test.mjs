@@ -224,6 +224,24 @@ test('run_js code that froze its page is not saved: a later page does not run it
   fresh.close()
 })
 
+test('a page that opens while run_js is pending does not run it; other pending commands still replay', async () => {
+  const busy = page({ answer: m => (m.op === 'run_js' ? sleep(150).then(() => ({ ok: true, result: {} })) : { ok: true, result: {} }) })
+  await busy.until(() => busy.messages.length)
+  const running = cmd('run_js', { code: 'slow()' })
+  await busy.until(() => busy.messages.some(m => m.args?.code === 'slow()'))
+  assert.ok(Number.isFinite(busy.messages.find(m => m.args?.code === 'slow()').expiresAt), 'a live command carries the bridge deadline')
+  const fresh = page()
+  try {
+    await fresh.until(() => fresh.messages.length)
+    await sleep(20)
+    assert.ok(!fresh.messages.some(m => m.args?.code === 'slow()'), 'the pending run_js is not replayed')
+    assert.equal((await running).status, 200)
+  } finally {
+    busy.close()
+    fresh.close()
+  }
+})
+
 test('the first page that succeeds answers, even when another page failed first', async () => {
   const failing = page({ answer: () => ({ ok: false, error: 'broken page' }) })
   const slow = page({ answer: () => sleep(100).then(() => ({ ok: true, result: { from: 'slow' } })) })

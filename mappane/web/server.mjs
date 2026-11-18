@@ -196,6 +196,9 @@ const handler = async (req, res) => {
       if (!isKnown && lastLogin) sse(res, { op: 'login', args: lastLogin, replay: true }, false)
       for (const entry of log) {
         if (isKnown && entry.id <= Number(lastN)) continue
+        // A pending run_js may be freezing its page: a new page must not run it too.
+        // shortcut: if it then succeeds, this page misses it until a reload.
+        if (entry.op === 'run_js' && pending.has(entry.id)) continue
         sse(res, toPage(entry, true))
         if (pending.has(entry.id)) replayed.add(entry.id)
       }
@@ -308,7 +311,8 @@ const handler = async (req, res) => {
           }),
           timeout,
         )
-        const message = toPage(entry, false)
+        // The bridge's own deadline (same clock as the page): run_js must not start or finish after it.
+        const message = { ...toPage(entry, false), expiresAt: Date.now() + timeout }
         for (const tab of targets) sse(tab, { ...message, tab: tabIds.get(tab) })
       })
       // A timed-out command may still finish on a page, and a replayed one may be on a page already:
