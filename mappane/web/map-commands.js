@@ -6,7 +6,7 @@ import { toGraphics } from "./geojson.js";
 // The refresh token stays in page memory only; a pane restart needs a new login.
 let refreshTimer;
 let signedInPortal;
-function login(IdentityManager, { portalUrl, clientId, token, expires, userId, refreshToken }) {
+async function login(IdentityManager, { portalUrl, clientId, token, expires, userId, refreshToken }) {
   if (![portalUrl, clientId, token, userId].every((v) => typeof v === "string" && v) || !Number.isFinite(expires)) {
     throw new Error("login needs portalUrl, clientId, token, expires and userId");
   }
@@ -22,7 +22,8 @@ function login(IdentityManager, { portalUrl, clientId, token, expires, userId, r
           grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken, f: "json",
         }) });
         const result = await response.json();
-        if (!result.access_token) throw new Error(result.error?.message ?? `HTTP ${response.status}`);
+        // No lifetime: the next timer would get NaN and fire at once, again and again.
+        if (!result.access_token || !Number.isFinite(result.expires_in)) throw new Error(result.error?.message ?? `HTTP ${response.status}`);
         const next = Date.now() + result.expires_in * 1000;
         register(result.access_token, next);
         refreshTimer = setTimeout(refresh, Math.max(next - Date.now() - 120_000, 10_000));
@@ -30,7 +31,10 @@ function login(IdentityManager, { portalUrl, clientId, token, expires, userId, r
         console.error("map-pane: token refresh failed; run bin/map-command login again", error.message);
       }
     };
-    refreshTimer = setTimeout(refresh, Math.max(expires - Date.now() - 120_000, 10_000));
+    // The bridge replays the first login to a page that opens later: by then the token may have expired,
+    // and the log that follows needs a good one. Renew before answering.
+    if (expires - Date.now() < 120_000) await refresh();
+    else refreshTimer = setTimeout(refresh, expires - Date.now() - 120_000);
   }
   signedInPortal = portal;
   return { user: userId, portal, expires: new Date(expires).toISOString() };

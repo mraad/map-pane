@@ -328,3 +328,53 @@ test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring o
     .map((r) => r.slice(1).reduce((a, p, i) => a + r[i][0] * p[1] - p[0] * r[i][1], 0))`);
   assert.ok(areas[0] < 0 && areas[1] > 0, `exterior clockwise, hole counterclockwise: ${areas}`);
 });
+
+// Runs after the login test: a token is registered, so the answer must not carry it.
+test("run_js answers the value and console, fails with the code's error, stops at the deadline and hides the token", async () => {
+  const js = (code, args = {}) => sendCommand(commandSocket(server.pid), { op: "run_js", args: { code, readOnly: true, ...args } });
+  assert.deepEqual(await js("console.log('zoom', { z: 1 }); return { layers: map.layers.length, ready: view.ready, named: /^L\\d+$/.test(layerId) }"),
+    { value: { layers: await evaluate("view.map.layers.length"), ready: true, named: true }, console: ['zoom {"z":1}'] });
+  assert.deepEqual(await js("view.map"), {}, "no return value, no console: an empty answer");
+  await assert.rejects(js("console.warn('looking'); return nope.x"), /nope is not defined\nconsole: looking/);
+  await assert.rejects(js("return ("), /Unexpected|SyntaxError/);
+  await assert.rejects(js(""), /code must be a non-empty string/);
+  await assert.rejects(js("await new Promise((_, no) => signal.addEventListener('abort', () => no(signal.reason)))", { timeoutMs: 1000 }), /did not finish in 1000 ms/);
+  const leak = await js(`const [im] = await $arcgis.import(["@arcgis/core/identity/IdentityManager.js"]);
+    console.log(im.credentials[0].token); return { token: im.credentials[0].token }`);
+  assert.deepEqual(leak, { value: { token: "[redacted]" }, console: ["[redacted]"] });
+  assert.equal((await js("return 'x'.repeat(70000)")).value.truncated, true);
+  // The deadline counts from arrival: code that waited past it behind another command fails and never starts,
+  // so the bridge (whose timer also starts at arrival) never drops code that then runs.
+  const slow = js("await new Promise((done) => setTimeout(done, 1500)); return 'slow'");
+  await new Promise((done) => setTimeout(done, 200)); // the slow one reaches the page first
+  const waited = js("window.ranLate = true", { timeoutMs: 1000 });
+  await assert.rejects(waited, /did not start: it waited 1000 ms/);
+  assert.equal((await slow).value, "slow");
+  assert.equal(await evaluate("window.ranLate === undefined"), true);
+});
+
+test("every example of docs/run-js.md runs, and the ones that change the map are replayed on a new page", { timeout: 90_000 }, async (t) => {
+  const socket = commandSocket(server.pid);
+  await request(socket, "/clear", {});
+  await sendCommand(socket, toOp({ command: "graphics", title: "Cities", data: JSON.parse(readFileSync(join(ROOT, "../examples/cities.geojson"), "utf8")) }));
+  const blocks = [...readFileSync(join(ROOT, "../docs/run-js.md"), "utf8").matchAll(/```js\n([\s\S]*?)```/g)].map((m) => m[1]);
+  assert.equal(blocks.length, 7);
+  const answers = [];
+  for (const code of blocks) answers.push((await sendCommand(socket, toOp({ command: "js", code, readOnly: code.startsWith("// readOnly") }))).value);
+  assert.equal(answers[0].cities, 20);
+  assert.equal(answers[0].largest, 37);
+  assert.deepEqual(answers[1].map((row) => row.name), ["Tokyo", "Delhi", "Shanghai"]);
+  assert.equal(answers[2].max, 37);
+  assert.match(answers[4].layerId, /^L\d+$/);
+  assert.equal(answers[4].rings, 3);
+  assert.ok(answers[5].inView.includes("Tokyo"));
+  assert.ok(answers[6].layers.length > 0);
+
+  // A new page gets the saved commands only: the layer, the renderer, the popup and the rings, not the queries.
+  const shown = `(() => { const c = view.map.layers.find((l) => l.title === "Cities"); const r = view.map.findLayerById(${JSON.stringify(answers[4].layerId)});
+    return c && r ? [c.renderer.visualVariables?.[0]?.type, c.popupTemplate?.title, r.graphics.length].join() : "" })()`;
+  assert.equal(await evaluate(shown), "size,{name},3");
+  await page.send("Page.reload");
+  await until(t, "window.view?.ready && !window.view.updating", "map view ready after the reload");
+  await until(t, `${shown} === "size,{name},3"`, "the replay rebuilt the renderer, the popup and the rings");
+});

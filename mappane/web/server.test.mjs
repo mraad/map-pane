@@ -3,14 +3,14 @@ import { test, before, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, request } from 'node:http'
 import { DatabaseSync } from 'node:sqlite'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const PORT = 18765
-const SAVED_PORT = 18766
+const OTHER_PORT = 18766
 const SERVER = new URL('./server.mjs', import.meta.url).pathname
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 let bridge
@@ -31,7 +31,7 @@ const stopBridge = async child => {
 }
 
 before(async () => {
-  bridge = await startBridge(PORT, { MAP_PANE_TIMEOUT_MS: '1000' })
+  bridge = await startBridge(PORT, { MAP_PANE_TIMEOUT_MS: '1000', MAP_PANE_JS_TIMEOUT_MS: '200' })
 })
 after(() => stopBridge(bridge))
 
@@ -89,21 +89,6 @@ test('/cmd with no map page answers 503 with the map state', async () => {
   assert.equal(res.state.isConnected, false)
 })
 
-test('/cmd with waitMs waits for a first page to connect, then sends to it; with none it gives up', async () => {
-  const waited = call('POST', '/cmd', { body: { op: 'go_to', args: { zoom: 4 }, waitMs: 5000 } }).then(res => ({ status: res.status, ...JSON.parse(res.text) }))
-  await sleep(200)
-  const tab = page()
-  const res = await waited
-  tab.close()
-  assert.equal(res.status, 200)
-  assert.equal(tab.messages.at(-1).op, 'go_to')
-
-  const none = await call('POST', '/cmd', { body: { op: 'go_to', args: {}, waitMs: 100 } }).then(r => ({ status: r.status, ...JSON.parse(r.text) }))
-  assert.equal(none.status, 503)
-  assert.equal(none.noPage, true)
-  assert.match(none.error, /after 100 ms/)
-})
-
 test('a foreign Host (DNS rebinding) or Origin (other web page) is refused', async () => {
   assert.equal((await call('GET', '/state', { headers: { host: 'evil.example:18765' } })).status, 403)
   const crossSite = await call('POST', '/cmd', {
@@ -111,14 +96,20 @@ test('a foreign Host (DNS rebinding) or Origin (other web page) is refused', asy
     headers: { origin: 'https://evil.example', 'content-type': 'text/plain' },
   })
   assert.equal(crossSite.status, 403)
+  // An <img src=".../events"> on another site sends no Origin: it must not count as a map page.
+  assert.equal((await call('GET', '/events', { headers: { 'sec-fetch-site': 'cross-site' } })).status, 403)
+  assert.equal((await call('GET', '/state', { headers: { 'sec-fetch-site': 'same-origin' } })).status, 200)
+  assert.equal((await call('GET', '/state', { headers: { 'sec-fetch-site': 'none' } })).status, 200)
+  // A link to the map on a web page still opens it.
+  assert.equal((await call('GET', '/', { headers: { 'sec-fetch-site': 'cross-site' } })).status, 200)
   assert.equal((await call('GET', '/state', { headers: { origin: `http://127.0.0.1:${PORT}` } })).status, 200)
 })
 
-test('control endpoints need the mod token; pages need none', async () => {
-  for (const path of ['/cmd', '/input']) {
+test('control endpoints need the token when MAP_PANE_TOKEN is set; pages need none', async () => {
+  for (const path of ['/cmd', '/clear']) {
     const res = await call('POST', path, { body: {}, headers: { 'x-map-pane-token': 'wrong' } })
     assert.equal(res.status, 403, path)
-    assert.match(JSON.parse(res.text).error, /another Claude Code session/)
+    assert.match(JSON.parse(res.text).error, /wrong bridge token/)
   }
   assert.equal((await call('GET', '/state', { headers: { 'x-map-pane-token': '' } })).status, 200)
 })
@@ -203,6 +194,34 @@ test('a new page replays the map; a reconnecting page gets only what it missed; 
   assert.deepEqual(back.messages.map(m => m.op), ['add_graphic'], 'only the command sent after it left')
   fresh.close()
   back.close()
+})
+
+test('run_js is saved and replayed with a layer id, except when it is readOnly', async () => {
+  const first = page({ answer: m => ({ ok: true, result: { value: m.args.code } }) })
+  await first.until(() => first.messages.length)
+  assert.equal((await cmd('run_js', { code: 'map.add(x)' })).result.value, 'map.add(x)')
+  await cmd('run_js', { code: 'return 1', readOnly: true })
+  const fresh = page()
+  await fresh.until(() => fresh.messages.some(m => m.op === 'run_js'))
+  await sleep(50)
+  const replayed = fresh.messages.filter(m => m.op === 'run_js')
+  assert.deepEqual(replayed.map(m => [m.args.code, m.replay, m.layerId]), [['map.add(x)', true, `L${replayed[0].id}`]])
+  first.close()
+  fresh.close()
+})
+
+test('run_js code that froze its page is not saved: a later page does not run it', async () => {
+  const frozen = page({ answer: () => undefined })
+  await frozen.until(() => frozen.messages.length)
+  const res = await cmd('run_js', { code: 'while (true) {}' })
+  assert.equal(res.status, 422)
+  assert.match(res.error, /blocks the page.*not saved/)
+  frozen.close()
+  const fresh = page()
+  await fresh.until(() => fresh.messages.length)
+  await sleep(50)
+  assert.ok(!fresh.messages.some(m => m.args?.code === 'while (true) {}'), 'the frozen code is not replayed')
+  fresh.close()
 })
 
 test('the first page that succeeds answers, even when another page failed first', async () => {
@@ -363,13 +382,13 @@ test('a command one page refused and another never answered stays in the log: th
 
 test('a page that opens after a login gets the login first, then the log', async () => {
   // Its own bridge: the login stays in memory and would reach every later test's pages.
-  const own = await startBridge(SAVED_PORT)
-  const first = page({ port: SAVED_PORT })
+  const own = await startBridge(OTHER_PORT)
+  const first = page({ port: OTHER_PORT })
   await first.until(() => first.messages.length)
-  assert.equal((await cmd('login', { token: 'T1', userId: 'u1' }, SAVED_PORT)).status, 200)
-  assert.equal((await cmd('set_basemap', { basemap: 'arcgis/navigation' }, SAVED_PORT)).status, 200)
+  assert.equal((await cmd('login', { token: 'T1', userId: 'u1' }, OTHER_PORT)).status, 200)
+  assert.equal((await cmd('set_basemap', { basemap: 'arcgis/navigation' }, OTHER_PORT)).status, 200)
   first.close()
-  const later = page({ port: SAVED_PORT })
+  const later = page({ port: OTHER_PORT })
   await later.until(() => later.messages.some(m => m.op === 'set_basemap'))
   const ops = later.messages.map(m => m.op)
   assert.equal(later.messages.find(m => m.op === 'login').args.token, 'T1')
@@ -404,15 +423,11 @@ test('/clear empties the map: open pages reset, and a page that reconnects with 
   // The page reports its layers, as a real one does after a command.
   await call('POST', '/state', { body: { state: { layers: [{ id: 'L1', title: 'Graphics', type: 'graphics', count: 1 }], center: [7, 8], zoom: 6 } } })
 
-  assert.equal((await call('POST', '/clear', { headers: { 'x-map-pane-token': '' } })).status, 403, 'the mod token is required')
+  assert.equal((await call('POST', '/clear', { headers: { 'x-map-pane-token': '' } })).status, 403, 'the token is required')
   assert.equal(JSON.parse((await call('GET', '/state')).text).layers.length, 1, 'a refused clear changes nothing')
-  const printed = bridge.lines.length
   const res = await call('POST', '/clear')
   assert.equal(res.status, 200)
   assert.deepEqual(JSON.parse(res.text).state, { layers: [], center: [7, 8], zoom: 6, isConnected: true }, 'layers gone, view kept')
-  await sleep(50)
-  const after = bridge.lines.slice(printed).filter(line => line.startsWith('STATE ')).map(line => JSON.parse(line.slice(6)))
-  assert.deepEqual(after.map(s => s.layers), [[]], 'one STATE line, with no layers')
   await watching.until(() => watching.messages.length)
   assert.deepEqual(watching.messages.map(m => m.op), ['reset'])
   assert.equal((await call('GET', inline)).status, 404, 'the inline GeoJSON file of a cleared layer is gone')
@@ -425,98 +440,19 @@ test('/clear empties the map: open pages reset, and a page that reconnects with 
   back.close()
 })
 
-test('a session map is saved: a new bridge for the same session replays it, with the local path served again', async () => {
-  const home = mkdtempSync(join(tmpdir(), 'bridge-home-'))
-  const env = { HOME: home, MAP_PANE_SESSION: 'session-1' }
-  const sessions = join(home, '.claude/map-pane/sessions')
-  const old = join(sessions, 'old-session')
-  const recent = join(sessions, 'recent-session')
-  mkdirSync(old, { recursive: true })
-  mkdirSync(recent, { recursive: true })
-  const longAgo = new Date(Date.now() - 31 * 24 * 3600 * 1000)
-  utimesSync(old, longAgo, longAgo)
-  const file = join(home, 'sites.geojson')
-  writeFileSync(file, '{"type":"FeatureCollection","features":[]}')
-  let saved = await startBridge(SAVED_PORT, env)
-  const tab = page({ port: SAVED_PORT })
-  await tab.until(() => tab.messages.length)
-  await cmd('add_layer', { type: 'geojson', path: file, title: 'Sites' }, SAVED_PORT)
-  const mapJson = join(sessions, 'session-1/map.json')
-  const logBefore = readFileSync(mapJson, 'utf8')
-  await call('POST', '/state', { body: { state: { layers: [], center: [10, 20], zoom: 5 } }, port: SAVED_PORT })
-  await cmd('login', { token: 'SECRET-TOKEN', userId: 'u1' }, SAVED_PORT)
-  tab.close()
-  await stopBridge(saved)
-  // A pan writes view.json only; the log file is left alone, and the token is never on disk.
-  assert.equal(readFileSync(mapJson, 'utf8'), logBefore)
-  assert.deepEqual(JSON.parse(readFileSync(join(sessions, 'session-1/view.json'), 'utf8')), { center: [10, 20], zoom: 5 })
-  assert.doesNotMatch(readFileSync(mapJson, 'utf8'), /SECRET-TOKEN/)
-  assert.equal(existsSync(old), false, 'a session map untouched for 30 days is deleted')
-  assert.ok(existsSync(recent))
-
-  saved = await startBridge(SAVED_PORT, env)
-  const next = page({ port: SAVED_PORT })
-  await next.until(() => next.messages.some(m => m.op === 'go_to'))
-  const layer = next.messages.find(m => m.op === 'add_layer')
-  assert.equal(layer.args.title, 'Sites')
-  assert.equal((await call('GET', layer.args.url, { port: SAVED_PORT })).status, 200)
-  assert.deepEqual(next.messages.at(-1).args, { center: [10, 20], zoom: 5 })
-  assert.ok(!next.messages.some(m => m.op === 'login'), 'a new bridge has no token to replay')
-  next.close()
-  await stopBridge(saved)
-})
-
-test('a bridge that cannot get its port says so, exits, and deletes no session folder', { timeout: 15000 }, async () => {
-  const home = mkdtempSync(join(tmpdir(), 'bridge-home-'))
-  const live = join(home, '.claude/map-pane/sessions/live-session')
-  mkdirSync(live, { recursive: true })
-  const longAgo = new Date(Date.now() - 31 * 24 * 3600 * 1000)
-  utimesSync(live, longAgo, longAgo)
-  const second = await startBridge(PORT, { HOME: home, MAP_PANE_SESSION: 'other-session' })
+test('a bridge that cannot get its port says so and exits', { timeout: 15000 }, async () => {
+  const second = await startBridge(PORT)
   assert.match(second.lines.find(line => line.startsWith('BRIDGE down')), /port 18765 is held/)
   await stopBridge(second)
-  assert.ok(existsSync(live), 'only the bridge that holds the port cleans up')
 })
 
 test('a timeout that is zero or not a number keeps the 15 s default', async () => {
-  const odd = await startBridge(SAVED_PORT, { MAP_PANE_TIMEOUT_MS: 'abc' })
-  const slow = page({ port: SAVED_PORT, answer: () => sleep(300).then(() => ({ ok: true, result: {} })) })
+  const odd = await startBridge(OTHER_PORT, { MAP_PANE_TIMEOUT_MS: 'abc' })
+  const slow = page({ port: OTHER_PORT, answer: () => sleep(300).then(() => ({ ok: true, result: {} })) })
   await slow.until(() => slow.messages.length)
-  assert.equal((await cmd('clear_graphics', {}, SAVED_PORT)).status, 200)
+  assert.equal((await cmd('clear_graphics', {}, OTHER_PORT)).status, 200)
   slow.close()
   await stopBridge(odd)
-})
-
-test('/input: events before any viewer are refused; a Chrome that cannot start is reported, not hung', async () => {
-  const early = await call('POST', '/input', { body: { events: [{ seq: 1, kind: 'key', key: '+' }] } })
-  assert.equal(early.status, 409)
-  assert.equal((await call('POST', '/input', { body: { size: { columns: 40, rows: 10 } } })).status, 200)
-  await sleep(500)
-  const after = await call('POST', '/input', { body: { events: [{ seq: 2, kind: 'key', key: '+' }] } })
-  assert.equal(after.status, 409, 'the failed viewer was dropped, so the next size can retry')
-})
-
-test('Chrome failures close together give up (VIEWER failed); failures spread apart keep trying', async () => {
-  const viewer = await startBridge(SAVED_PORT, { MAP_PANE_FAILURE_WINDOW_MS: '300' })
-  const size = () => call('POST', '/input', { body: { size: { columns: 40, rows: 10 } }, port: SAVED_PORT })
-  const failures = async n => {
-    for (let i = 0; i < 100 && viewer.lines.filter(line => line.startsWith('VIEWER')).length < n; i++) await sleep(20)
-  }
-  try {
-    for (let i = 1; i <= 3; i++) {
-      await size()
-      await failures(i)
-      await sleep(400)
-    }
-    assert.ok(!viewer.lines.some(line => line.startsWith('VIEWER failed')), 'each failure came after the window')
-    for (let i = 4; i <= 6; i++) {
-      await size()
-      await failures(i)
-    }
-    assert.match(viewer.lines.at(-1), /^VIEWER failed /)
-  } finally {
-    await stopBridge(viewer)
-  }
 })
 
 test('a page that closes without answering does not hold up the others: the error answers at once', async () => {

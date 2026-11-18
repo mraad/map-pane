@@ -1,5 +1,6 @@
 {
   "name": "map-pane",
   "owner": { "name": "mraad" },
-  "plugins": [{ "name": "mappane", "source": "./mappane" }]
+  "description": "A live web map driven by agents through a skill and a CLI",
+  "plugins": [{ "name": "map-pane", "source": "./" }]
 }

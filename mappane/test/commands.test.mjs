@@ -24,6 +24,7 @@ test("command parser accepts map operations and rejects invalid commands and URL
   assert.deepEqual(parseCommand("basemap list"), { command: "basemap", list: true });
   assert.deepEqual(parseCommand("login"), { command: "login" });
   assert.deepEqual(parseCommand("save-webmap  North Sea wells "), { command: "save-webmap", title: "North Sea wells" });
+  assert.deepEqual(parseCommand("js return 1 +\n 2"), { command: "js", code: "return 1 +\n 2" });
   assert.equal(new Set([...BASEMAPS.legacy, ...BASEMAPS.styles]).size, BASEMAPS.legacy.length + BASEMAPS.styles.length);
   assert.ok(BASEMAPS.styles.every((id) => /^(arcgis|osm|open)\//.test(id)) && !BASEMAPS.legacy.some((id) => id.includes("/")));
   for (const command of ["map-service", "feature-service", "geojson"]) {

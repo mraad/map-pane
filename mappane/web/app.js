@@ -20,7 +20,7 @@ const view = mapEl.view
 const map = mapEl.map
 window.view = view // the end-to-end tests read the map state through this
 const badge = document.getElementById('badge')
-// Inside a pane (mod pane or Kitty pane) the map stays clear of the badge.
+// Inside the Kitty pane the map stays clear of the badge.
 if (new URLSearchParams(location.search).has('embedded')) badge.hidden = true
 
 // The legend tracks map.layers itself; show it only while operational layers exist.
@@ -142,6 +142,17 @@ function findLayer(key) {
   const layer = map.findLayerById(key) ?? map.layers.find(l => l.title === key)
   if (!layer) throw new Error(`no layer with id or title "${key}"`)
   return layer
+}
+
+// run_js: agent-written code runs as the page (not a sandbox). The answer is bounded, and the
+// sign-in token and API key are cut from it, so a returned credential or a logged request URL does not leak by accident.
+const AsyncFunction = (async () => {}).constructor
+const JS_MAX_CHARS = 64 * 1024
+const JS_MAX_LINES = 100
+const redact = text => [apiKey, ...IdentityManager.credentials.map(c => c.token)]
+  .filter(Boolean).reduce((t, secret) => t.split(secret).join('[redacted]'), text)
+const toJson = value => {
+  try { return JSON.stringify(value) ?? JSON.stringify(String(value)) } catch { return JSON.stringify(String(value)) }
 }
 
 const ops = {
@@ -310,6 +321,52 @@ const ops = {
   async login(args) { return runMapCommand(view, { ...args, command: 'login' }) },
   async save_webmap({ title }) { return runMapCommand(view, { command: 'save-webmap', title }) },
 
+  // The body of an async function with view, map, layerId and signal in scope. Its return value and
+  // console lines answer; a throw or the deadline fails the command (the bridge then drops it from the log).
+  async run_js({ code, timeoutMs }, { layerId, replay, at }) {
+    if (typeof code !== 'string' || !code.trim()) throw new Error('code must be a non-empty string')
+    const ms = Math.min(Math.max(Number(timeoutMs) || 30000, 1000), 60000)
+    // The deadline counts from arrival, like the bridge's own timer: code that waited too long behind other
+    // commands does not start, so the bridge never drops code that then runs. A replay has no one waiting.
+    const left = replay ? ms : ms - (performance.now() - at)
+    if (left <= 0) throw new Error(`the code did not start: it waited ${ms} ms behind other map commands. Send it again`)
+    const lines = []
+    const real = { log: console.log, warn: console.warn, error: console.error }
+    // A replay answers no one: its console stays the page's own.
+    if (!replay) {
+      console.log = console.warn = console.error = (...parts) => {
+        if (lines.length < JS_MAX_LINES) lines.push(redact(parts.map(p => (typeof p === 'string' ? p : toJson(p))).join(' ')).slice(0, 2000))
+      }
+    }
+    const stop = new AbortController()
+    let timer
+    try {
+      const value = await Promise.race([
+        new AsyncFunction('view', 'map', 'layerId', 'signal', code)(view, map, layerId, stop.signal),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            const late = new Error(`the code did not finish in ${ms} ms`)
+            stop.abort(late) // code that passes `signal` to fetch or the SDK stops; other code runs on unseen
+            reject(late)
+          }, left)
+        }),
+      ])
+      const result = {}
+      if (value !== undefined) {
+        const text = redact(toJson(value))
+        result.value = text.length > JS_MAX_CHARS ? { truncated: true, preview: text.slice(0, JS_MAX_CHARS) } : JSON.parse(text)
+      }
+      if (lines.length) result.console = lines
+      return result
+    } catch (err) {
+      // The console lines travel with the error: they often say why the code failed.
+      throw new Error(redact([String(err?.message ?? err), ...lines.map(line => `console: ${line}`)].join('\n')).slice(0, 8000))
+    } finally {
+      clearTimeout(timer)
+      Object.assign(console, real)
+    }
+  },
+
   // A fixed width and height give the same picture size from the pane and the browser.
   async screenshot({ width = view.width, height = view.height }) {
     const { dataUrl } = await view.takeScreenshot({ format: 'png', width, height })
@@ -322,10 +379,10 @@ const post = (path, body) =>
 
 // One command at a time, in the order sent: a replay must rebuild the map exactly.
 let queue = Promise.resolve()
-async function handle({ id, op, args, layerId, replay, tab }) {
+async function handle({ id, op, args, layerId, replay, tab }, at) {
   try {
     if (!ops[op]) throw new Error(`unknown op: ${op}`)
-    const result = await ops[op](args ?? {}, { layerId, replay })
+    const result = await ops[op](args ?? {}, { layerId, replay, at })
     // A replay is not answered: the bridge waits for no one, and one /state follows the whole replay.
     if (id != null && !replay) await post('/ack', { id, tab, ok: true, result })
   } catch (err) {
@@ -345,9 +402,10 @@ events.onerror = () => { badge.className = 'down'; badge.textContent = 'map: dis
 let busy = 0
 events.onmessage = msg => {
   const command = JSON.parse(msg.data)
+  const at = performance.now() // run_js counts its deadline from here
   busy++
   queue = queue
-    .then(() => handle(command))
+    .then(() => handle(command, at))
     .catch(err => console.warn(`${command.op} failed:`, err))
     .finally(() => { if (--busy === 0 && command.replay) report() })
 }

@@ -1,9 +1,8 @@
-# Use map-pane standalone: Ghostty, Codex and Pi
+# Use map-pane: Ghostty, browser, Claude Code, Codex and Pi
 
-Standalone, the map runs without the Claude Code mod.
 `mappane/bin/map-pane` shows the map in a terminal with Kitty graphics, for example in a Ghostty split.
 `mappane/bin/map-command` changes the map from any shell.
-The `map-pane` skill tells Codex, Pi or Claude Code how to use the CLI.
+The `map-pane` skill tells Claude Code, Codex or Pi how to use the CLI.
 
 ![The map in a Ghostty split](img/ghostty-split.jpg)
 
@@ -33,7 +32,7 @@ mappane/bin/map-pane           # run in the current terminal
 mappane/bin/map-pane --browser # open the map in the default browser
 ```
 
-`mappane/bin/map-pane` first looks for a running map bridge of your user, for example the Claude Code mod's bridge.
+`mappane/bin/map-pane` first looks for a running map bridge of your user, for example the bridge of another pane or of `--browser`.
 If one answers, the pane shows that map. If none answers, the launcher starts a bridge on a free port.
 
 With `--browser`, the launcher opens the map page in the default browser and prints `{"url": ...}`.
@@ -57,12 +56,12 @@ A zoom widget shows at the top left. The legend shows at the bottom right while 
 2. Push Ctrl+C.
 
 The pane restores the terminal and stops its Chrome. If the launcher started the bridge, it stops the bridge too.
-A bridge that was already running (for example the mod's) continues. Ghostty closes the split.
+A bridge that was already running continues. Ghostty closes the split.
 
 To stop a map that you opened with `--browser`, type `mappane/bin/map-pane --close`.
 The command stops the bridge that `--browser` started and closes the map tabs in Google Chrome.
 Tabs in other browsers stay open and show that the connection is lost.
-If `--browser` did not start a bridge (for example, it used the mod's bridge), the command stops nothing and exits with status 1.
+If `--browser` did not start a bridge (for example, it used the bridge of a split), the command stops nothing and exits with status 1.
 
 ## 5. Map commands
 
@@ -90,6 +89,7 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `geojson <url>` | Adds GeoJSON from a URL. |
 | `geopackage <url> [table]` | Adds the vector tables of a GeoPackage, one layer each. |
 | `graphics <file \| - \| JSON> [--title <name>] [--renderer <file \| JSON>] [--labels <file \| JSON>]` | Adds GeoJSON from a file, standard input or inline JSON. |
+| `js <file.js \| - \| code> [--timeout <ms>] [--read-only]` | Runs JavaScript in the map page. Prints the returned `value` and the `console` lines. See [Run JavaScript](#run-javascript). |
 | `--info` | Prints the page URL, process id and socket of the targeted map. |
 
 Commands that add data do not move the view. Type `zoom` after them.
@@ -106,6 +106,7 @@ cat features.geojson | mappane/bin/map-command graphics - --title Features
 mappane/bin/map-command graphics examples/cities.geojson --title "World cities" --renderer examples/population-renderer.json
 mappane/bin/map-command zoom
 mappane/bin/map-command screenshot map.png
+mappane/bin/map-command js 'return map.layers.map(l => l.title).toArray()' --read-only
 ```
 
 ### The legend
@@ -130,6 +131,28 @@ A name that starts with a digit gets an initial `_`. An empty name becomes `fiel
 The name `__oid` is reserved. Underscores are added until each name is unique.
 Properties with only null values make no field. The alias keeps the original name.
 A property with only numbers becomes a `double` field. Other properties become `string` fields.
+
+### Run JavaScript
+
+`js` runs code in the map page, for work that no other command does: feature queries, statistics,
+a renderer calculated from the data, popups, geometry operations.
+
+- The code is the body of an async function. `view`, `map`, `layerId` and `signal` are in scope. `await` and `return` work.
+- Give the code inline (in single quotes), as a file whose name ends in `.js` or `.mjs`, or on standard input (`-`).
+- The command prints `{ "value": <the returned value>, "console": [<the logged lines>] }`.
+- Code that changes the map is saved and runs again on each page that opens later. Give a new layer `id: layerId`.
+- Add `--read-only` when the code only reads the map or moves the view. It is then not saved.
+- The deadline is 30 s. `--timeout <ms>` changes it (1,000 to 60,000).
+- The code has the rights of the page. After `login` it can read the portal token. Run only code and data that you trust.
+
+```sh
+mappane/bin/map-command graphics examples/cities.geojson --title Cities
+mappane/bin/map-command js --read-only '
+  const layer = map.layers.find(l => l.title === "Cities")
+  return await layer.queryFeatureCount({ where: "population__millions_ > 20" })'
+```
+
+All the rules and seven tested examples: [run-js.md](run-js.md).
 
 ## 6. Basemaps
 
@@ -175,10 +198,11 @@ The skill runs the CLI by its absolute path, so the agent can work in your own p
 
 | Agent | Install |
 |---|---|
+| Claude Code | `/plugin install map-pane --marketplace mraad/map-pane` |
 | Codex | `codex plugin marketplace add mraad/map-pane`, then `codex plugin add map-pane@map-pane` |
 | Pi | `pi install git:github.com/mraad/map-pane` |
 
-From a local clone, use its path instead: `codex plugin marketplace add /path/to/map-pane` or `pi install /path/to/map-pane`.
+From a local clone, use its path instead: `claude plugin marketplace add /path/to/map-pane`, `codex plugin marketplace add /path/to/map-pane` or `pi install /path/to/map-pane`.
 A local Pi install loads the clone in place. A local Codex install copies it: after a change, run `codex plugin add map-pane@map-pane` again.
 
 Without an install, start the agent in the repository folder: Codex and Pi find `.agents/skills/`,
@@ -188,12 +212,13 @@ Ask with the skill prefix, or in plain words:
 
 | Agent | Example |
 |---|---|
+| Claude Code | `/map-pane go_to location Austin, Texas` (in the repository folder), `/map-pane:map-pane ...` (installed) |
 | Codex | `$map-pane go_to location Austin, Texas` |
 | Pi | `/skill:map-pane go_to location Austin, Texas` |
-| Claude Code (no mod) | `/map-pane go_to location Austin, Texas` |
 
 The agent needs shell access on the same computer, as the user who runs the map.
 An agent can query data (for example with DuckDB), write GeoJSON and a renderer, and send them with `graphics`.
+For questions about data that is already on the map, the agent writes code for `js` ([run-js.md](run-js.md)).
 
 ### Codex
 
@@ -216,8 +241,8 @@ Pi needs its provider credentials in its environment. Start it from a shell that
 
 ### Claude Code
 
-With the `mappane` mod loaded, Claude uses the mod's tools. See [mod.md](mod.md).
-Without the mod, Claude uses the skill and the CLI, like Codex and Pi.
+Claude runs the CLI with its shell tool and asks before each new command.
+To stop the prompts, allow the CLI once in `/permissions`, for example `Bash(/path/to/map-pane/.agents/skills/map-pane/scripts/map-command:*)`.
 
 ### Tested
 
@@ -227,7 +252,7 @@ On 2026-11-17, each agent ran the same task on a live map: geocode Austin, Texas
 |---|---|---|
 | Codex CLI 0.169.0 | skill + CLI, `workspace-write` with network access | Austin matched (score 100), 20 features with the population renderer, [screenshot](img/proof-codex.png) |
 | Pi 1.3.0 | skill + CLI | Same result, [screenshot](img/proof-pi.png) |
-| Claude Code (mod, `claude -p --plugin-dir ./mappane`) | `mcp__mappane__go_to`, `add_layer`, `screenshot` | Austin matched (score 100), layer added, [screenshot](img/proof-claude.png) |
+| Claude Code (mod, removed in 0.5.0) | `mcp__mappane__go_to`, `add_layer`, `screenshot` | Austin matched (score 100), layer added, [screenshot](img/proof-claude.png) |
 
 Codex and Pi also ran the task from an unrelated folder after an install (plugin and package), each with the CLI from its install path.
 
@@ -268,7 +293,7 @@ The start-view variables apply only to a bridge that the launcher starts. A bad 
 | GeoJSON | WGS84 (RFC 7946). A `crs` member is an error. Polygon ring order is corrected. |
 | Failed layers | The page loads a layer before it adds it. A layer that fails does not change the map. |
 | GeoPackage | Each vector table is a layer. EPSG or WKT and Z are kept; M is dropped. Raster tiles, curves and undefined coordinate systems are refused. 64 MiB and 100,000 features at most. |
-| Deadlines | 15 s for each command; 60 s to add data, `graphics` and `save-webmap`; 30 s for `zoom` and `screenshot`; 30 s each for a GeoPackage download and conversion. |
+| Deadlines | 15 s for each command; 60 s to add data, `graphics` and `save-webmap`; 30 s for `zoom` and `screenshot`; 30 s for `js` code (60 s at most); 30 s each for a GeoPackage download and conversion. |
 | Services | A service must allow browser CORS access. |
 | Repeats | Commands that add data are not idempotent. Examine the map before you repeat a command that timed out. |
 
