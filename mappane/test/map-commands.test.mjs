@@ -61,7 +61,7 @@ test("graphics preserve properties while assigning unique safe field names", asy
   assert.deepEqual(properties, original);
 });
 
-test("save-webmap needs a sign-in, saves service layers with saveAs and embeds client-side layers in map order", async (t) => {
+test("save-webmap needs a sign-in, saves a basemap-only WebMap, then writes every layer's JSON in map order", async (t) => {
   const previous = globalThis.$arcgis;
   t.after(() => { globalThis.$arcgis = previous; });
   const previousLocation = globalThis.location;
@@ -71,7 +71,8 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   const local = { id: "local", title: "Wells", type: "feature", opacity: 1, visible: true, geometryType: "point", objectIdField: "__oid",
     fields: [json({ name: "__oid", type: "esriFieldTypeOID" })], renderer: json({ type: "simple" }), definitionExpression: "__oid > 1",
     source: { toArray: () => [{ geometry: json({ x: 1, y: 2 }), attributes: { __oid: 1 } }] } };
-  const service = { id: "service", type: "map-image", url: "https://example.com/MapServer", clone: () => "service-clone" };
+  // No clone(): most SDK 5.2 layers have none, so save-webmap writes toJSON() instead.
+  const service = { id: "service", type: "map-image", url: "https://example.com/MapServer", toJSON: () => ({ id: "service", layerType: "ArcGISMapServiceLayer" }) };
   let layers = [local, service];
   const view = { map: { layers: { toArray: () => layers }, basemap: json("basemap") }, viewpoint: json("viewpoint"), spatialReference: json("sr") };
   let created, updated;
@@ -79,11 +80,11 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
     if (name.endsWith("IdentityManager.js")) return { registerToken: () => {} };
     if (name.endsWith("Portal.js")) return class { constructor({ url }) { this.url = url; } async load() {} };
     return class WebMap {
-      constructor(props) { created = props; this.allLayers = { toArray: () => props.layers }; }
+      constructor(props) { created = props; }
       async updateFrom(target) { assert.equal(target, view); }
       async saveAs({ title, portal }) {
         return { id: "item1", title, owner: "me", access: "private", portal,
-          fetchData: async () => ({ operationalLayers: [{ id: "service-saved" }] }), update: async ({ data }) => { updated = data; } };
+          fetchData: async () => ({ operationalLayers: [], version: "2.x" }), update: async ({ data }) => { updated = data; } };
       }
     };
   } };
@@ -97,15 +98,17 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   layers = [{ title: "Stations", type: "parquet", data: { urls: { toArray: () => ["https://example.com/a.parquet", "/files/key/b.parquet"] } } }];
   await assert.rejects(runMapCommand(view, input), /local bridge: Stations/);
   assert.equal(created, undefined);
-  // Page code added a bridge layer to a group while the imports loaded: the clone check finds it.
-  layers = [{ title: "Group", type: "group", clone: () => ({ title: "Sites", type: "csv", url: "/files/key/sites.csv" }) }];
+  layers = [{ title: "Sites", type: "csv", url: "/files/key/sites.csv" }];
   await assert.rejects(runMapCommand(view, input), /local bridge: Sites/);
+  assert.equal(created, undefined);
   layers = [local, service];
   assert.deepEqual(await runMapCommand(view, input), {
     id: "item1", title: "Wells", owner: "me", access: "private", layers: 2, url: "https://portal.example.com/home/item.html?id=item1",
   });
-  assert.deepEqual(created.layers, ["service-clone"]);
-  assert.deepEqual(updated.operationalLayers.map((layer) => layer.id), ["local", "service-saved"]);
+  assert.deepEqual(Object.keys(created), ["basemap"]);
+  assert.equal(updated.version, "2.x", "keeps the rest of the saved item data");
+  assert.deepEqual(updated.operationalLayers.map((layer) => layer.id), ["local", "service"]);
+  assert.equal(updated.operationalLayers[1].layerType, "ArcGISMapServiceLayer");
   const [{ layerDefinition, featureSet }] = updated.operationalLayers[0].featureCollection.layers;
   assert.equal(layerDefinition.geometryType, "esriGeometryPoint");
   assert.equal(layerDefinition.definitionExpression, "__oid > 1");

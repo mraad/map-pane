@@ -48,7 +48,7 @@ Command ids are assigned after preparation finishes, in delivery order, so overl
 Inline `add_layer` GeoJSON (`data`) is written to a file in the data folder; the log holds the path.
 A screenshot's data URL is written to a PNG in the data folder; the answer holds the path.
 `save_webmap` runs on the first connected page and is never retried on another page after failure or disconnection, since the portal item may already exist.
-Local feature collections keep their layer filters when saved. Layer updates validate all requested property names before applying any changes.
+`save-webmap` saves a WebMap with only the basemap, then writes each layer's `toJSON()` into the item data (most SDK 5.2 layers have no `clone()`). Local feature collections keep their layer filters when saved. Layer updates validate all requested property names before applying any changes.
 
 ## Security
 

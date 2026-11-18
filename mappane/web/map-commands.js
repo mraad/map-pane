@@ -118,36 +118,28 @@ async function saveWebMap(view, { title }) {
   if (typeof title !== "string" || !title.trim()) throw new Error("save-webmap needs a title");
   if (!signedInPortal) throw new Error("save-webmap needs a sign-in. Run bin/map-command login first");
   const layers = view.map.layers.toArray();
-  const refuseBridgeLayers = (all) => {
-    const temporary = all.filter(isBridgeLayer);
-    if (temporary.length) throw new Error(`Cannot save layers served by the local bridge: ${temporary.map(layer => layer.title || layer.id).join(", ")}. Use a permanent URL, or import the data as GeoJSON with graphics and remove the local layer.`);
-  };
-  refuseBridgeLayers((view.map.allLayers ?? view.map.layers).toArray());
+  const temporary = (view.map.allLayers ?? view.map.layers).toArray().filter(isBridgeLayer);
+  if (temporary.length) throw new Error(`Cannot save layers served by the local bridge: ${temporary.map(layer => layer.title || layer.id).join(", ")}. Use a permanent URL, or import the data as GeoJSON with graphics and remove the local layer.`);
   const unsupported = layers.find((layer) => layer.type === "graphics");
   if (unsupported) throw new Error(`Layer ${unsupported.title} has mixed geometry and cannot be saved`);
+  // Most SDK 5.2 layers have no clone(), and a layer added to the WebMap leaves the view's map: save their
+  // web map JSON instead. Taken with the check above, before any await, so page code cannot slip a layer in.
+  const operationalLayers = layers.map((layer) => (layer.type === "feature" && !layer.url ? featureCollection(layer) : layer.toJSON()));
   const [WebMap, Portal] = await Promise.all([
     $arcgis.import("@arcgis/core/WebMap.js"), $arcgis.import("@arcgis/core/portal/Portal.js"),
   ]);
-  const local = (layer) => layer.type === "feature" && !layer.url;
-  const webmap = new WebMap({
-    basemap: view.map.basemap.clone(), layers: layers.filter((layer) => !local(layer)).map((layer) => layer.clone()),
-  });
-  // Again on the clones that saveAs writes: page code can add a layer to a group while the imports load.
-  refuseBridgeLayers(webmap.allLayers.toArray());
+  const webmap = new WebMap({ basemap: view.map.basemap.clone() });
   // Stores the view's viewpoint and a thumbnail in the item.
   await webmap.updateFrom(view);
   const portal = new Portal({ url: signedInPortal, authMode: "immediate" });
   await portal.load();
   // saveAs shares nothing: the new item is private to its owner.
   const item = await webmap.saveAs({ title: title.trim(), portal, snippet: "Saved by map-pane" });
-  if (layers.some(local)) {
+  if (operationalLayers.length) {
     try {
-      const data = await item.fetchData();
-      const saved = (data.operationalLayers ?? []).values();
-      data.operationalLayers = layers.map((layer) => (local(layer) ? featureCollection(layer) : saved.next().value));
-      await item.update({ data });
+      await item.update({ data: { ...(await item.fetchData()), operationalLayers } });
     } catch (error) {
-      throw new Error(`Item ${item.id} was created, but adding its client-side layers failed: ${error.message}`);
+      throw new Error(`Item ${item.id} was created, but adding its layers failed: ${error.message}`);
     }
   }
   return {

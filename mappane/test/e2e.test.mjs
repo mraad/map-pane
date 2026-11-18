@@ -322,6 +322,25 @@ test("saving a web map refuses a bridge-served layer before contacting the porta
   await assert.rejects(command({ command: "save-webmap", title: "Local map" }), /local bridge: Local parquet/);
 });
 
+test("saving a web map copies layers that have no clone() in SDK 5.2 and gets as far as the portal", { timeout: 60_000 }, async () => {
+  await request(commandSocket(server.pid), "/clear", {});
+  assert.deepEqual(await evaluate(`(async () => {
+    const [GeoJSONLayer, MapImageLayer, GroupLayer] = await Promise.all(["GeoJSONLayer", "MapImageLayer", "GroupLayer"]
+      .map((name) => $arcgis.import(\`@arcgis/core/layers/\${name}.js\`)));
+    view.map.addMany([
+      new GeoJSONLayer({ url: "https://example.com/a.geojson", title: "Remote" }),
+      new MapImageLayer({ url: "https://example.com/arcgis/rest/services/X/MapServer", title: "Service" }),
+      new GroupLayer({ title: "Group", layers: [new GeoJSONLayer({ url: "https://example.com/b.geojson" })] }),
+    ]);
+    return view.map.layers.toArray().map((layer) => typeof layer.clone);
+  })()`), ["undefined", "undefined", "undefined"]);
+  // The login test signed in to a portal that does not exist: saving fails there, after the layers are copied.
+  const error = await command({ command: "save-webmap", title: "Remote map" }).then(() => null, (err) => err);
+  assert.ok(error, "the made-up portal cannot save");
+  assert.doesNotMatch(error.message, /clone|local bridge/);
+  assert.equal(await evaluate("view.map.layers.length"), 3, "the layers stay on the map");
+});
+
 test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {
   const op = (name, args = {}) => sendCommand(commandSocket(server.pid), { op: name, args });
   await request(commandSocket(server.pid), "/clear", {}); // only this test's layers count for zoom-all
