@@ -8,7 +8,7 @@ go_to location <country | state | city | zipcode | address>
 go_to coordinate <latitude> <longitude> [zoom]
 screenshot <file.png>
 basemap [list | <id>]
-login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]
+login [--arcctl] [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]
 map-service <url>
 feature-service <url>
 geojson <url>
