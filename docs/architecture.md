@@ -22,7 +22,7 @@ agent (skill) or shell ── bin/map-command (cli/command.mjs) ──socket─�
 | `GET /`, `/app.js`, `/map-commands.js`, `/commands.js`, `/geojson.js` | page | The page files, read once at start. No other path is served. |
 | `GET /api/start` | page | The start view from `MAP_PANE_*` (`startView` in `web/commands.js`). |
 | `GET /api/info` | CLI, launcher | `{url, pid, socket}` |
-| `GET /events` | page | SSE: `event: version`, then `reset` + log replay + last view for a new page, then live commands. Ids are `<epoch>:<n>`. |
+| `GET /events` | page | SSE: `event: version`, then `reset` + log replay + last view for a new page, then live commands. Ids are `<epoch>:<n>:<login id>`; a reconnecting page gets the last login if its id is newer. |
 | `POST /cmd {op, args}` | CLI | Sends a command to every page, except `save_webmap`, which runs on one page only. The first `ok` ack answers. An error answers only when every connected target page failed. A page that connected later replayed a logged command and never answers it, so it holds the command until the timeout. A failed logged command leaves the log, except when a page already replayed it. `503 noPage` when no page is open at intake or after preparation. A command discarded before dispatch is never logged. |
 | `POST /ack`, `POST /state` | page | A command's answer (with the `tab` id the command carried), or a manual change, with the page's map state. |
 | `POST /clear` | CLI | Empties the log, takes a new epoch, sends `reset` to every page, deletes inline GeoJSON files. |

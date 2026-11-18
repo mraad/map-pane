@@ -314,6 +314,12 @@ test("saving a web map refuses a bridge-served layer before contacting the porta
     type: "geojson", path: join(ROOT, "../examples/cities.geojson"), title: "Local cities", zoomTo: false,
   } });
   await assert.rejects(command({ command: "save-webmap", title: "Local map" }), /local bridge: Local cities/);
+  // A Parquet layer has no layer.url: the check reads its data.urls, on the clone that would be saved.
+  await request(socket, "/clear", {});
+  await sendCommand(socket, { op: "add_layer", args: {
+    type: "parquet", path: join(ROOT, "../examples/cities.parquet"), title: "Local parquet", zoomTo: false,
+  } });
+  await assert.rejects(command({ command: "save-webmap", title: "Local map" }), /local bridge: Local parquet/);
 });
 
 test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {

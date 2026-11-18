@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bridgeFileLayers, portalBasemaps, portalItem, runMapCommand } from "../web/map-commands.js";
+import { portalBasemaps, portalItem, runMapCommand } from "../web/map-commands.js";
 
 test("portal basemaps need a sign-in", async () => {
   assert.deepEqual(portalItem("item"), { id: "item" });
@@ -79,7 +79,7 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
     if (name.endsWith("IdentityManager.js")) return { registerToken: () => {} };
     if (name.endsWith("Portal.js")) return class { constructor({ url }) { this.url = url; } async load() {} };
     return class WebMap {
-      constructor(props) { created = props; }
+      constructor(props) { created = props; this.allLayers = { toArray: () => props.layers }; }
       async updateFrom(target) { assert.equal(target, view); }
       async saveAs({ title, portal }) {
         return { id: "item1", title, owner: "me", access: "private", portal,
@@ -93,12 +93,13 @@ test("save-webmap needs a sign-in, saves service layers with saveAs and embeds c
   layers = [{ title: "Mixed", type: "graphics" }];
   await assert.rejects(runMapCommand(view, input), /Mixed has mixed geometry/);
   assert.deepEqual(portalItem("item"), { id: "item", portal: { url: "https://portal.example.com" } });
-  layers = [{ title: "Stations", type: "parquet" }];
-  bridgeFileLayers.add(layers[0]);
+  // A Parquet layer's files are in data.urls, a Collection.
+  layers = [{ title: "Stations", type: "parquet", data: { urls: { toArray: () => ["https://example.com/a.parquet", "/files/key/b.parquet"] } } }];
   await assert.rejects(runMapCommand(view, input), /local bridge: Stations/);
-  layers = [{ title: "Sites", type: "csv", url: "/files/key/sites.csv" }];
-  await assert.rejects(runMapCommand(view, input), /local bridge: Sites/);
   assert.equal(created, undefined);
+  // Page code added a bridge layer to a group while the imports loaded: the clone check finds it.
+  layers = [{ title: "Group", type: "group", clone: () => ({ title: "Sites", type: "csv", url: "/files/key/sites.csv" }) }];
+  await assert.rejects(runMapCommand(view, input), /local bridge: Sites/);
   layers = [local, service];
   assert.deepEqual(await runMapCommand(view, input), {
     id: "item1", title: "Wells", owner: "me", access: "private", layers: 2, url: "https://portal.example.com/home/item.html?id=item1",

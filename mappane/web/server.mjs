@@ -6,7 +6,7 @@
 // POST /clear empties the map (every layer gone, default basemap, view kept), with or without a page open.
 //
 // Every page shows the same map: the bridge keeps a log of the commands that change it and replays the log
-// to each page that connects (SSE ids `<epoch>:<n>`, so a reconnecting page gets only what it missed).
+// to each page that connects (SSE ids `<epoch>:<n>:<login id>`, so a reconnecting page gets only what it missed).
 // The log lives in memory: a new bridge starts with an empty map.
 import { createServer } from 'node:http'
 import { chmodSync, createReadStream, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -61,6 +61,8 @@ const tabIds = new WeakMap()
 let nextTab = 1
 // The last successful login's args (token included): memory only, replayed to each new page.
 let lastLogin
+// The id of the last login each page got, live or replayed.
+const loginIds = new WeakMap()
 const pending = new Map()
 // Ids of pending commands a page already got in its replay: that page may show them, even after it disconnects.
 const replayed = new Set()
@@ -102,8 +104,11 @@ function toPage(entry, replay) {
   return { id: entry.id, op: entry.op, args, layerId: `L${entry.id}`, ...(replay ? { replay: true } : {}) }
 }
 
-const sse = (res, message, withId = true) =>
-  res.write(`${withId && message.id != null ? `id: ${epoch}:${message.id}\n` : ''}data: ${JSON.stringify(message)}\n\n`)
+// Ids are `<epoch>:<n>:<login id the page got>`: a page can see later commands before a pending login is the last one.
+const sse = (res, message, withId = true) => {
+  if (message.op === 'login' && message.id != null) loginIds.set(res, message.id)
+  res.write(`${withId && message.id != null ? `id: ${epoch}:${message.id}:${loginIds.get(res) ?? 0}\n` : ''}data: ${JSON.stringify(message)}\n\n`)
+}
 
 const body = async req => {
   const raw = await text(req)
@@ -195,11 +200,14 @@ const handler = async (req, res) => {
       })
       res.write(`: connected\n\nevent: version\ndata: ${PAGE_VERSION}\n\n`)
       // A page that reconnects to this log gets only what it missed; any other page starts over.
-      const [lastEpoch, lastN] = String(req.headers['last-event-id'] ?? '').split(':')
+      const [lastEpoch, lastN, lastLoginId] = String(req.headers['last-event-id'] ?? '').split(':')
       const isKnown = lastEpoch === epoch && Number(lastN) < nextId
       if (!isKnown) sse(res, { op: 'reset' }, false)
       // Before the log: a logged basemap style or portal layer needs the token to replay.
-      if (lastLogin && (!isKnown || Number(lastN) < lastLogin.id)) sse(res, { op: 'login', args: lastLogin.args, replay: true }, false)
+      if (lastLogin && (!isKnown || !(Number(lastLoginId) >= lastLogin.id))) {
+        loginIds.set(res, lastLogin.id)
+        sse(res, { op: 'login', args: lastLogin.args, replay: true }, false)
+      }
       for (const entry of log) {
         if (isKnown && entry.id <= Number(lastN)) continue
         // A pending run_js may be freezing its page: a new page must not run it too.

@@ -308,7 +308,7 @@ mappane/bin/map-pane           # run in the current terminal</code></pre>
     <tr><td><code>screenshot &lt;file.png&gt;</code></td><td>Writes a PNG of the map. The PNG has no legend.</td></tr>
     <tr><td><code>clear</code></td><td>Removes all layers. The basemap goes back to the start basemap. The legend hides.</td></tr>
     <tr><td><code>login [--portal-url] [--client-id] [--redirect-uri]</code></td><td>Signs in to a portal. See <a href="#login">Sign in</a>.</td></tr>
-    <tr><td><code>save-webmap &lt;title&gt;</code></td><td>Saves the map as a private web map item. Sign in first. Use permanent data URLs or import local GeoJSON with <code>graphics</code> before you save.</td></tr>
+    <tr><td><code>save-webmap &lt;title&gt;</code></td><td>Saves the map as a private web map item. Sign in first. Use permanent data URLs. Or import local GeoJSON with <code>graphics</code>, then remove the local layer. The GeoJSON must have one geometry type: a mixed file makes a layer that you cannot save.</td></tr>
     <tr><td class="wrap"><code>js &lt;file.js | - | code&gt; [--timeout &lt;ms&gt;] [--read-only]</code></td><td>Runs JavaScript in the map page. See <a href="#js">Run JavaScript</a>.</td></tr>
     <tr><td><code>--info</code></td><td>Prints the page URL, the process id and the socket of the map that the CLI uses.</td></tr>
   </tbody>

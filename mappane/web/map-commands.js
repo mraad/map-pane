@@ -109,17 +109,20 @@ function featureCollection(layer) {
 }
 const GEOMETRY = { point: "esriGeometryPoint", multipoint: "esriGeometryMultipoint", polyline: "esriGeometryPolyline", polygon: "esriGeometryPolygon" };
 
-// Parquet layers can refer to several files without exposing a layer.url.
-export const bridgeFileLayers = new WeakSet();
-export const isBridgeFile = url => url && new URL(url, location.href).href.startsWith(`${location.origin}/files/`);
+const isBridgeFile = url => url && new URL(url, location.href).href.startsWith(`${location.origin}/files/`);
+// A Parquet layer has no layer.url: its files are in data.urls (urls before SDK 5.1).
+const list = urls => urls?.toArray?.() ?? urls ?? [];
+const isBridgeLayer = layer => [layer.url, ...list(layer.data?.urls), ...list(layer.urls)].some(isBridgeFile);
 
 async function saveWebMap(view, { title }) {
   if (typeof title !== "string" || !title.trim()) throw new Error("save-webmap needs a title");
   if (!signedInPortal) throw new Error("save-webmap needs a sign-in. Run bin/map-command login first");
   const layers = view.map.layers.toArray();
-  const temporary = (view.map.allLayers ?? view.map.layers).toArray().filter(layer =>
-    bridgeFileLayers.has(layer) || isBridgeFile(layer.url));
-  if (temporary.length) throw new Error(`Cannot save layers served by the local bridge: ${temporary.map(layer => layer.title || layer.id).join(", ")}. Use a permanent URL or import GeoJSON with graphics.`);
+  const refuseBridgeLayers = (all) => {
+    const temporary = all.filter(isBridgeLayer);
+    if (temporary.length) throw new Error(`Cannot save layers served by the local bridge: ${temporary.map(layer => layer.title || layer.id).join(", ")}. Use a permanent URL, or import the data as GeoJSON with graphics and remove the local layer.`);
+  };
+  refuseBridgeLayers((view.map.allLayers ?? view.map.layers).toArray());
   const unsupported = layers.find((layer) => layer.type === "graphics");
   if (unsupported) throw new Error(`Layer ${unsupported.title} has mixed geometry and cannot be saved`);
   const [WebMap, Portal] = await Promise.all([
@@ -129,6 +132,8 @@ async function saveWebMap(view, { title }) {
   const webmap = new WebMap({
     basemap: view.map.basemap.clone(), layers: layers.filter((layer) => !local(layer)).map((layer) => layer.clone()),
   });
+  // Again on the clones that saveAs writes: page code can add a layer to a group while the imports load.
+  refuseBridgeLayers(webmap.allLayers.toArray());
   // Stores the view's viewpoint and a thumbnail in the item.
   await webmap.updateFrom(view);
   const portal = new Portal({ url: signedInPortal, authMode: "immediate" });

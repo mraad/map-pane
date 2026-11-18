@@ -83,7 +83,7 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `basemap list` | Prints the basemaps you can use now. See [Basemaps](#6-basemaps). |
 | `basemap <id>` | Sets the basemap: a keyless, legacy or style id, or a portal basemap item id. |
 | `login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]` | Signs in to a portal. See [Sign in](#7-sign-in). |
-| `save-webmap <title>` | Saves the map as a private web map item. Needs `login`. Use permanent data URLs or import local GeoJSON with `graphics` before saving. |
+| `save-webmap <title>` | Saves the map as a private web map item. Needs `login`. Use permanent data URLs, or import local GeoJSON with `graphics` and remove the local layer. The GeoJSON must have one geometry type: a mixed file makes a layer that cannot be saved. |
 | `map-service <url>` | Adds a MapServer. |
 | `feature-service <url>` | Adds a FeatureServer. A root URL adds all layers. A numbered URL adds one. |
 | `geojson <url>` | Adds GeoJSON from a URL. |
