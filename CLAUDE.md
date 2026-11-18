@@ -16,7 +16,7 @@ It replaces `mraad/claude-mod-map` and `mraad/ghostty-map-pane` (deprecated).
 Never put "arcgis" in a name we own (folders, plugin, tools, env vars, headers, paths, titles): it is a trademark.
 SDK identifiers (`@arcgis/core`, `<arcgis-*>`, `$arcgis`, CDN and service URLs) and plain mentions of the SDK are fine.
 
-Docs: `docs/standalone.md`, `docs/architecture.md` (protocol, ops, security), `docs/run-js.md` (`run_js` contract and examples). Update them when behavior changes.
+Docs: `docs/guide.html` (STE100 HTML manual, images inline; rebuild it when behavior changes), `docs/standalone.md`, `docs/architecture.md` (protocol, ops, security), `docs/run-js.md` (`run_js` contract and examples). Update them when behavior changes.
 
 ## Commands
 

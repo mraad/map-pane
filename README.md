@@ -4,7 +4,7 @@ A live web map that an agent drives from the terminal. The map is built on the A
 Headless Chrome draws the map. A terminal pane shows it, and takes your mouse and keys.
 
 Claude Code, Codex and Pi use one skill, `map-pane`, which runs the CLI `mappane/bin/map-command`. You can run the CLI too.
-The map shows in a Ghostty split (Kitty graphics) or in any browser. Guide: [docs/standalone.md](docs/standalone.md).
+The map shows in a Ghostty split (Kitty graphics) or in any browser. Guide: [docs/standalone.md](docs/standalone.md). Full manual (HTML, images inline): [docs/guide.html](docs/guide.html).
 
 ![The map in a Ghostty split](docs/img/ghostty-split.jpg)
 

@@ -1,21 +1,20 @@
-# Run JavaScript in the map (`run_js`)
+# Run JavaScript in the map (`js`)
 
-`run_js` runs code that an agent (or you) wrote inside the live map page.
+`map-command js` (op `run_js`) runs code that an agent (or you) wrote inside the live map page.
 Use it when no other command does the job: feature queries and statistics, a renderer calculated from the data,
 popups, client-side layers, geometry operations.
 For plain work (add a layer, set a filter, move the map) the other commands are shorter and safer.
 
 | Caller | How |
 |---|---|
-| Claude Code mod | Tool `mcp__mappane__run_js` with `code`, `readOnly`, `timeoutMs`. |
-| Shell, Codex, Pi | `mappane/bin/map-command js <file.js \| - \| inline code> [--timeout <ms>] [--read-only]` |
+| Shell, Claude Code, Codex, Pi | `mappane/bin/map-command js <file.js \| - \| inline code> [--timeout <ms>] [--read-only]` |
 | Any program | `POST /cmd {"op":"run_js","args":{"code":"...","readOnly":true,"timeoutMs":30000}}` on the bridge. See [architecture](architecture.md). |
 
 > **Security.** The code runs with the full rights of the page. It is not a sandbox.
 > After `login`, the code can read the portal token and send it to any server.
 > The answer has the token and the API key removed, but that only stops accidents.
 > Text that the agent reads (feature attributes, item titles, file contents) can contain instructions.
-> Run `run_js` only with data that you trust, or do not sign in.
+> Run `js` only with data that you trust, or do not sign in.
 
 ## 1. The contract
 
@@ -39,14 +38,14 @@ Rules:
 - The deadline is 30 s. Change it with `timeoutMs` or `--timeout` (1,000 to 60,000 ms). Code that is late fails, but it can continue to run in the page.
 - The deadline counts from the time the page gets the code. The page runs one command at a time, so code can wait behind a slow command. Code that waited longer than its deadline does not start.
 - Do not return or log geometry in bulk. Return counts, extents and attributes.
-- Find a layer by id (`map.findLayerById("L3")`) or by title (`map.layers.find(l => l.title === "Cities")`). `extent`, `map_state` and each command that adds data give the ids.
+- Find a layer by id (`map.findLayerById("L3")`) or by title (`map.layers.find(l => l.title === "Cities")`). `js` with `map.layers` and each command that adds data give the ids.
 
 ### Code that changes the map is saved
 
 The bridge saves each command that changes the map. Each page that opens later runs the saved commands again, in order.
-This is how the mod pane, a Ghostty split and a browser tab show the same map.
+This is how a Ghostty split and a browser tab show the same map.
 
-- **Default:** `run_js` is saved. The code runs again on each new page, and after a reload.
+- **Default:** `js` code is saved. The code runs again on each new page, and after a reload.
   Write code that gives the same result on a new page: do not depend on the view, on a selection or on what an earlier read-only call did.
 - **A new layer:** give it `id: layerId` and a title. For more than one layer use `` `${layerId}-1` ``, `` `${layerId}-2` ``.
   Then `remove`, `zoom` and `update-layer` find the layer on each page.
@@ -54,10 +53,10 @@ This is how the mod pane, a Ghostty split and a browser tab show the same map.
   Use it for each query. If you forget it, the query runs again on each new page. That is slow, but it is not an error.
 - Code that fails is not saved. Code that passed the deadline is a failure, so it is not saved either.
   But it can still complete on the page that ran it, and then that page shows a change that new pages do not get.
-  Examine the map (`extent`, `map_state`) before you send the code again.
+  Examine the map (`extent`, or a read-only `js`) before you send the code again.
 - Code that blocks the page (a loop that never ends) gets no answer. After 65 s the command fails and the code is not saved.
 - When more than one page is open, each page runs the code. The first page that succeeds gives the answer.
-- `clear` (or `/map clear`) removes the saved commands and the layers.
+- `clear` removes the saved commands and the layers.
 
 ## 2. Examples
 
@@ -210,38 +209,28 @@ map-command: layer is not defined
 console: looking for the layer
 ```
 
-## 4. Use from Claude Code (mod)
+## 4. Use from Claude Code, Codex and Pi
 
-Ask in plain words. Claude writes the code and calls `mcp__mappane__run_js`.
-
-- "How many cities are on the map, and which is the largest?"
-- "Size the Cities symbols by population."
-- "Draw a 300 km ring around the three largest cities."
-- "Which cities are in the current view?"
-
-The tool answers `{ "result": { "value": ..., "console": [...] }, "map": { layers, center, zoom } }`.
-
-## 5. Use from Codex and Pi
-
-The `map-pane` skill tells the agent to use `scripts/map-command js`. Examples:
+The `map-pane` skill tells the agent to use `scripts/map-command js`. Ask in plain words, or with the skill prefix:
 
 | Agent | Prompt |
 |---|---|
+| Claude Code | `/map-pane draw a 300 km ring around the three largest cities` |
 | Codex | `$map-pane count the features of each layer` |
 | Pi | `/skill:map-pane size the Cities layer by population` |
 
-## 6. Failures
+## 5. Failures
 
 | Message | Cause | Correction |
 |---|---|---|
 | `code must be a non-empty string` | No code arrived. | Give the code, a `.js` file or `-`. |
 | `the code did not finish in <n> ms` | The deadline passed. | Increase `--timeout`, make the query smaller, or pass `signal`. Examine the map first: the code can still complete. |
 | `the code did not start: it waited <n> ms behind other map commands` | An earlier command was still running when the deadline passed. The code did not run. | Send it again, after the earlier command completes. |
-| `the map page did not answer in 65000 ms: the code blocks the page ...` | The code never gave control back, for example a loop that never ends. The code is not saved. | Reload the page (`/map stop`, then `/map`; or close and open the split). The saved map comes back. Correct the code. |
+| `the map page did not answer in 65000 ms: the code blocks the page ...` | The code never gave control back, for example a loop that never ends. The code is not saved. | Reload the page (close and open the split, or reload the browser tab). The bridge replays the map. Correct the code. |
 | `Unexpected token ...`, `... is not defined` | The code has an error. | Correct the code. Send it again. |
-| `No map page is open` | No page shows the map. | Open the map: `/map`, or `mappane/bin/map-pane --split`. |
+| `No map page is open` | No page shows the map. | Open the map: `mappane/bin/map-pane --split` or `--browser`. |
 
-## 7. Limits
+## 6. Limits
 
 - The code is not isolated. See the security note at the top.
 - A loop that never ends blocks the page. No deadline in the page can stop it.
