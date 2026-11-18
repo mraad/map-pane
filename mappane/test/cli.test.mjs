@@ -2,13 +2,13 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
-import { request, toOp } from "../cli/command.mjs";
+import { arcctlSession, request, toOp } from "../cli/command.mjs";
 import { BASEMAPS } from "../web/commands.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -257,6 +257,81 @@ test("CLI login runs PKCE against the portal, hands the token to the page, never
   while (!text.includes('"op":"login"')) text += new TextDecoder().decode((await reader.read()).value);
   await reader.cancel();
   assert.match(text, /"op":"login","args":\{[^}]*"token":"SECRET-TOKEN"/);
+});
+
+// A fake portal for login --arcctl: renews with the refresh token and names the user; records each request.
+async function arcctlPortal(t) {
+  const requests = [];
+  const portal = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
+    const form = new URLSearchParams(body);
+    requests.push({ url: req.url, form });
+    res.setHeader("content-type", "application/json");
+    if (req.url === "/sharing/rest/oauth2/token" && form.get("grant_type") === "refresh_token" && form.get("refresh_token") === "R" && form.get("client_id") === "cid") {
+      return res.end(JSON.stringify({ access_token: "RENEWED-TOKEN", expires_in: 1800 }));
+    }
+    if (req.url === "/sharing/rest/community/self" && ["ARCCTL-TOKEN", "RENEWED-TOKEN"].includes(form.get("token"))) return res.end(JSON.stringify({ username: "u1" }));
+    res.end(JSON.stringify({ error: { message: "bad request" } }));
+  });
+  await new Promise((ok) => portal.listen(0, "127.0.0.1", ok));
+  t.after(() => portal.close());
+  return { url: `http://127.0.0.1:${portal.address().port}`, requests };
+}
+// An arcctl config dir whose config.json holds `session` (mode 0600 unless given).
+function arcctlDir(session, mode = 0o600) {
+  const dir = mkdtempSync(join(tmp, "arcctl-"));
+  writeFileSync(join(dir, "config.json"), JSON.stringify({ portal_url: session?.portal, ...(session && { session }) }));
+  chmodSync(join(dir, "config.json"), mode);
+  return dir;
+}
+const hour = () => new Date(Date.now() + 3_600_000).toISOString();
+
+test("CLI login --arcctl hands arcctl's saved session to the page, never prints it, never writes the file", { timeout: 10_000 }, async (t) => {
+  const map = await page(t);
+  const portal = await arcctlPortal(t);
+  const dir = arcctlDir({ token: "ARCCTL-TOKEN", portal: `${portal.url}/`, expires_at: hour(), refresh_token: "R", refresh_expires_at: hour(), client_id: "cid" });
+  const before = readFileSync(join(dir, "config.json"));
+  const run = cli(["login", "--arcctl"], { env: { ARCCTL_CONFIG_DIR: dir, MAP_PANE_PORTAL_URL: "" } });
+  await map.reply(await map.next(), {}); // the extent probe
+  const login = await map.next();
+  assert.equal(login.op, "login");
+  assert.deepEqual([login.args.token, login.args.userId, login.args.clientId, login.args.refreshToken, login.args.portalUrl],
+    ["ARCCTL-TOKEN", "u1", "cid", "R", portal.url]);
+  await map.reply(login, { user: "u1" });
+  assert.equal(await run.exited, 0, run.err());
+  assert.doesNotMatch(run.out() + run.err(), /ARCCTL-TOKEN|"R"/);
+  assert.deepEqual(portal.requests.map((r) => r.url), ["/sharing/rest/community/self"], "a fresh token is not renewed; the token is in the body, not the URL");
+  assert.deepEqual(readFileSync(join(dir, "config.json")), before);
+});
+
+test("arcctlSession renews an expiring token in memory and refuses sessions it must not use", async (t) => {
+  const portal = await arcctlPortal(t);
+  const good = { token: "ARCCTL-TOKEN", portal: portal.url, expires_at: new Date(Date.now() + 30_000).toISOString(), refresh_token: "R", refresh_expires_at: hour(), client_id: "cid" };
+  const previous = process.env.ARCCTL_CONFIG_DIR;
+  t.after(() => { if (previous === undefined) delete process.env.ARCCTL_CONFIG_DIR; else process.env.ARCCTL_CONFIG_DIR = previous; });
+  const use = (session, mode) => { process.env.ARCCTL_CONFIG_DIR = arcctlDir(session, mode); return process.env.ARCCTL_CONFIG_DIR; };
+  const dir = use(good);
+  const before = readFileSync(join(dir, "config.json"));
+  const renewed = await arcctlSession();
+  assert.equal(renewed.token, "RENEWED-TOKEN", "30 s left: renewed first");
+  assert.ok(renewed.expires > Date.now() + 1_700_000);
+  assert.deepEqual(readFileSync(join(dir, "config.json")), before, "renewed in memory only");
+  assert.equal(await arcctlSession({ portalUrl: `${portal.url}/` }).then((s) => s.userId), "u1", "a trailing slash is the same portal");
+  const count = portal.requests.length;
+  use(good, 0o644);
+  await assert.rejects(arcctlSession(), /must belong to you and be private/);
+  use(undefined);
+  await assert.rejects(arcctlSession(), /No arcctl session in/);
+  process.env.ARCCTL_CONFIG_DIR = join(tmp, "no-such-arcctl");
+  await assert.rejects(arcctlSession(), /does not exist/);
+  use({ ...good, refresh_token: undefined, client_id: undefined });
+  await assert.rejects(arcctlSession(), /cannot renew/);
+  use({ ...good, refresh_expires_at: new Date(Date.now() - 1000).toISOString() });
+  await assert.rejects(arcctlSession(), /has expired/);
+  use(good);
+  await assert.rejects(arcctlSession({ portalUrl: "https://www.arcgis.com" }), /is for http:\/\/127\.0\.0\.1:\d+, not https:\/\/www\.arcgis\.com/);
+  assert.equal(portal.requests.length, count, "a refused session sends nothing");
 });
 
 test("CLI login fails clearly without a client ID", { timeout: 10_000 }, async (t) => {

@@ -495,6 +495,22 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
   <li>Pages that open later get the sign-in from the bridge. After a bridge restart, sign in again.</li>
   <li>A save runs on one page only. If that page disconnects during the save, examine the portal before you try again. The item can exist already.</li>
 </ul>
+<h3>Use the arcctl sign-in</h3>
+<p>If you use arcctl, you can sign in one time. The map then uses the arcctl session.</p>
+<ol class="steps">
+  <li><span>Type <code>arcctl login --portal &lt;portal-url&gt; --client-id &lt;client-id&gt;</code>.</span></li>
+  <li><span>Start the map.</span></li>
+  <li><span>Type <code>mappane/bin/map-command login --arcctl</code>.</span></li>
+</ol>
+<ul>
+  <li><code>--arcctl</code> reads the file <code>config.json</code> in the arcctl folder. The folder is <code>ARCCTL_CONFIG_DIR</code>, or <code>./.arcctl</code> if it exists, or <code>~/.arcctl</code>.</li>
+  <li>map-pane only reads the file. It does not write the file. It does not print the token.</li>
+  <li>The file must belong to you. Only you can read it (mode 600).</li>
+  <li>Use an OAuth <code>arcctl login</code>. A <code>--generate-token</code> session cannot renew, so <code>--arcctl</code> refuses it.</li>
+  <li>The token goes only to the portal that issued it. If <code>--portal-url</code> names a different portal, <code>--arcctl</code> refuses.</li>
+  <li>The map pages renew the token in memory. After <code>arcctl logout</code> or a new <code>arcctl login</code>, type <code>login --arcctl</code> again.</li>
+  <li>The sign-in goes from arcctl to the map only. The map does not give its token to arcctl.</li>
+</ul>
 
 <!-- 13 -->
 <h2 id="agents"><span class="n">13</span>Agents</h2>

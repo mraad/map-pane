@@ -82,7 +82,7 @@ Each command prints JSON. A failed command prints an error and exits with status
 | `basemap` | Prints the current basemap: `id` and `title`. |
 | `basemap list` | Prints the basemaps you can use now. See [Basemaps](#6-basemaps). |
 | `basemap <id>` | Sets the basemap: a keyless, legacy or style id, or a portal basemap item id. |
-| `login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]` | Signs in to a portal. See [Sign in](#7-sign-in). |
+| `login [--arcctl] [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>]` | Signs in to a portal. See [Sign in](#7-sign-in). |
 | `save-webmap <title>` | Saves the map as a private web map item. Needs `login`. Use permanent data URLs, or import local GeoJSON with `graphics` and remove the local layer. The GeoJSON must have one geometry type: a mixed file makes a layer that cannot be saved. |
 | `map-service <url>` | Adds a MapServer. |
 | `feature-service <url>` | Adds a FeatureServer. A root URL adds all layers. A numbered URL adds one. |
@@ -190,6 +190,23 @@ mappane/bin/map-command basemap arcgis/navigation
 - Only one `login` can wait at a time, because it listens on port 8766. Use `--redirect-uri` or `MAP_PANE_REDIRECT_URI` for another loopback port.
 - Pages that open later get the sign-in from the bridge. After a bridge restart, sign in again.
 - A save runs on one page and keeps filters on local feature layers. If that page disconnects while saving, check the portal before retrying: the item may already exist.
+
+### Use the arcctl sign-in
+
+If you use [arcctl](https://github.com/EsriPS/arcctl), sign in one time with `arcctl login`. Then give that session to the map:
+
+```sh
+arcctl login --portal <portal-url> --client-id <client-id>
+mappane/bin/map-command login --arcctl
+```
+
+- `--arcctl` reads the session from `config.json` in the arcctl folder: `ARCCTL_CONFIG_DIR`, else `./.arcctl` if it exists, else `~/.arcctl`.
+- map-pane only reads that file. It never writes it, and it never prints the token. arcctl stays the owner of the session.
+- The file must belong to you and be private (mode 600).
+- The session must come from an OAuth `arcctl login`. A `--generate-token` session cannot renew, so `--arcctl` refuses it.
+- The token goes only to the portal that issued it. With `--portal-url` or `MAP_PANE_PORTAL_URL` set to another portal, `--arcctl` refuses.
+- The map pages renew the token with the arcctl refresh token, in memory. After `arcctl logout` or a new `arcctl login`, run `login --arcctl` again.
+- The sign-in goes one way only: map-pane cannot give its token to arcctl.
 
 ## 8. Agents
 

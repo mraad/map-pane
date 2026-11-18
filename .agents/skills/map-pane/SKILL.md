@@ -1,7 +1,7 @@
 ---
 name: map-pane
 description: Open, control and close a live web map (Ghostty split or browser) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove or restyle a layer, clear the map, save a web map, take a screenshot of a running map, or run JavaScript in the map page (query features, statistics, computed renderers, popups, geometry operations).
-argument-hint: "open [browser] | close [browser] | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id | title] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title> | js <file.js | - | code> [--timeout <ms>] [--read-only]"
+argument-hint: "open [browser] | close [browser] | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--arcctl] [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id | title] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title> | js <file.js | - | code> [--timeout <ms>] [--read-only]"
 ---
 
 # Map pane
@@ -58,6 +58,7 @@ page URL of the targeted map. Every page of one bridge shows the same map.
 | Set a basemap style (after `login`) | `scripts/map-command basemap arcgis/dark-gray` |
 | Set a portal basemap (item id from `basemap list`) | `scripts/map-command basemap <item-id>` |
 | Sign in to an ArcGIS portal | `scripts/map-command login [--portal-url URL] [--client-id ID] [--redirect-uri URI]` |
+| Sign in with the arcctl session (after `arcctl login`) | `scripts/map-command login --arcctl` |
 | Read the current extent | `scripts/map-command extent` |
 | Go to a country, state, city, ZIP code or address | `scripts/map-command go_to location 'Austin, Texas'` |
 | Go to latitude, longitude, optional zoom | `scripts/map-command go_to coordinate 30.2672 -97.7431 12` |
@@ -168,6 +169,9 @@ More examples (computed range, buffers as a new layer, features in view, fetch):
 - `login` prints the sign-in URL on stderr, opens the browser on macOS and waits up to 5 minutes.
   Use a shell timeout of at least 300 seconds, or run it in the background. Give the URL to the user.
   Do not start a second `login` while one waits.
+- `login --arcctl` uses the session of `arcctl login` (no browser, no wait): it reads arcctl's `config.json`
+  (`ARCCTL_CONFIG_DIR`, else `./.arcctl`, else `~/.arcctl`), never writes it, and refuses a file others can read,
+  a session that cannot renew, or a `--portal-url` other than the session's portal. Prefer it when arcctl is signed in.
 - The token lives in the open map pages and in bridge memory, never on disk: a page that opens later is signed in too, a bridge restart loses it; run `login` again.
 - `save-webmap` prints the item id and URL. Avoid `<` and `>` in layer titles; the portal strips them.
 

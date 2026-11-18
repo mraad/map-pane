@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import http from "node:http";
 import { copyFile, readFile, readdir, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { text as readText } from "node:stream/consumers";
 import { createHash, randomBytes } from "node:crypto";
@@ -135,6 +136,43 @@ async function signIn({ portalUrl, clientId, redirectUri }) {
   };
 }
 
+// The session `arcctl login` saved, for the page: arcctl stays its only writer, and the token is never printed.
+// shortcut: reads arcctl's config.json session; switch to an `arcctl auth token --json` command if arcctl adds one.
+export async function arcctlSession({ portalUrl } = {}) {
+  // arcctl's own order: ARCCTL_CONFIG_DIR, then ./.arcctl if it exists, then ~/.arcctl.
+  const dir = process.env.ARCCTL_CONFIG_DIR || (existsSync(".arcctl") ? ".arcctl" : join(homedir(), ".arcctl"));
+  const file = join(dir, "config.json");
+  const info = await stat(file).catch(() => null);
+  if (!info) throw new Error(`No arcctl session: ${file} does not exist. Run arcctl login first`);
+  if (info.uid !== process.getuid() || info.mode & 0o077) throw new Error(`${file} must belong to you and be private (chmod 600)`);
+  const { session } = JSON.parse(await readFile(file, "utf8"));
+  if (!session?.token || !session.portal) throw new Error(`No arcctl session in ${file}. Run arcctl login first`);
+  if (!session.refresh_token || !session.client_id) throw new Error("The arcctl session cannot renew (generateToken login?). Run arcctl login (OAuth) first");
+  if (session.refresh_expires_at && Date.parse(session.refresh_expires_at) < Date.now()) throw new Error("The arcctl session has expired. Run arcctl login again");
+  const portal = httpUrl(session.portal).replace(/\/+$/, "");
+  // Never send arcctl's token to a portal other than the one that issued it.
+  if (portalUrl && httpUrl(portalUrl).replace(/\/+$/, "") !== portal) throw new Error(`The arcctl session is for ${portal}, not ${portalUrl}`);
+  const post = async (path, form) => {
+    const response = await fetch(`${portal}/sharing/rest/${path}`, { method: "POST", body: new URLSearchParams({ ...form, f: "json" }) });
+    const reply = await response.json().catch(() => ({}));
+    if (reply.error || !response.ok) throw new Error(`${path} failed: ${reply.error?.message ?? reply.error_description ?? `HTTP ${response.status}`}`);
+    return reply;
+  };
+  let token = session.token;
+  let expires = Date.parse(session.expires_at);
+  // Renewed in memory only: arcctl renews its own copy when it next needs one.
+  if (!(expires - Date.now() > 60_000)) {
+    const renewed = await post("oauth2/token", { grant_type: "refresh_token", client_id: session.client_id, refresh_token: session.refresh_token });
+    if (!renewed.access_token || !Number.isFinite(renewed.expires_in)) throw new Error("Token refresh failed: no access_token or expires_in");
+    token = renewed.access_token;
+    expires = Date.now() + renewed.expires_in * 1000;
+  }
+  // arcctl does not keep the user name; the page needs it. The token goes in the form body, never in a URL.
+  const { username } = await post("community/self", { token });
+  if (!username) throw new Error("community/self returned no username");
+  return { portalUrl: portal, clientId: session.client_id, token, expires, userId: username, refreshToken: session.refresh_token };
+}
+
 async function main() {
   const [name, ...args] = process.argv.slice(2);
   if (!name || name === "--help") {
@@ -154,6 +192,11 @@ async function main() {
     if (value) options[flag] = JSON.parse(/^\s*[[{]/.test(value) ? value : await readFile(value, "utf8"));
   }
   // The only flag without a value: the code only reads the map, so the bridge does not replay it.
+  // login --arcctl takes arcctl's saved session instead of a new sign-in.
+  if (name === "login" && args.includes("--arcctl")) {
+    args.splice(args.indexOf("--arcctl"), 1);
+    options.arcctl = true;
+  }
   if (name === "js" && args.includes("--read-only")) {
     args.splice(args.indexOf("--read-only"), 1);
     options.readOnly = true;
@@ -202,7 +245,8 @@ async function main() {
   }
   if (command.command === "login") {
     await send("/cmd", toOp({ command: "extent" })); // Fail before the sign-in if no map is ready.
-    Object.assign(command, await signIn({
+    if (options.arcctl) Object.assign(command, await arcctlSession({ portalUrl: options["portal-url"] || process.env.MAP_PANE_PORTAL_URL }));
+    else Object.assign(command, await signIn({
       portalUrl: options["portal-url"] || process.env.MAP_PANE_PORTAL_URL || "https://www.arcgis.com",
       clientId: options["client-id"] || process.env.MAP_PANE_CLIENT_ID,
       redirectUri: options["redirect-uri"] || process.env.MAP_PANE_REDIRECT_URI || "http://127.0.0.1:8766/",
