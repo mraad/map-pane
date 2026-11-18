@@ -94,6 +94,7 @@ test("invalid GeoJSON is rejected before any graphics are added", () => {
     { type: "Point", coordinates: [0, 0], crs: {} },
     { type: "LineString", coordinates: [[0, 0]] },
     { type: "LineString", coordinates: [[0, 0], [1, 1, 1]] },
+    { type: "MultiLineString", coordinates: [[[0, 0], [1, 1]], [[2, 2, 0], [3, 3, 1]]] },
     { type: "Polygon", coordinates: [[[0, 0], [1, 0], [1, 1], [0, 1]]] },
     { type: "CircularString", coordinates: [] }]) {
     assert.throws(() => toGraphics(data));

@@ -1,5 +1,5 @@
 // The map page: runs the bridge's commands one at a time (SSE /events -> POST /ack). No build step.
-import { portalBasemaps, portalUrl, runMapCommand } from './map-commands.js'
+import { portalBasemaps, portalItem, portalUrl, runMapCommand } from './map-commands.js'
 import { BASEMAPS, ITEM_ID } from './commands.js'
 import { toGraphics } from './geojson.js'
 
@@ -96,7 +96,7 @@ const LAYER_TYPES = {
   },
   'portal-item': async a => {
     if (!a.itemId) throw new Error('portal-item needs itemId')
-    return (await use('Layer')).fromPortalItem({ portalItem: { id: a.itemId } })
+    return (await use('Layer')).fromPortalItem({ portalItem: portalItem(a.itemId) })
   },
 }
 
@@ -253,7 +253,7 @@ const ops = {
         map.basemap = new Basemap({ id: basemap, title: basemap, baseLayers: [base], referenceLayers: labels ? [labels] : [] })
       } else if (ITEM_ID.test(basemap)) {
         const Basemap = await $arcgis.import('@arcgis/core/Basemap.js')
-        map.basemap = new Basemap({ portalItem: { id: basemap, ...(portalUrl() && { portal: { url: portalUrl() } }) } })
+        map.basemap = new Basemap({ portalItem: portalItem(basemap) })
       } else {
         map.basemap = basemap
       }

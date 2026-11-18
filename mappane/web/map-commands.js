@@ -5,6 +5,7 @@ import { toGraphics } from "./geojson.js";
 // The page owns the token: it registers it with the SDK and refreshes it before it expires.
 // The refresh token stays in page memory only; a pane restart needs a new login.
 let refreshTimer;
+let activeLogin;
 let signedInPortal;
 async function login(IdentityManager, { portalUrl, clientId, token, expires, userId, refreshToken }) {
   if (![portalUrl, clientId, token, userId].every((v) => typeof v === "string" && v) || !Number.isFinite(expires)) {
@@ -13,30 +14,40 @@ async function login(IdentityManager, { portalUrl, clientId, token, expires, use
   const portal = httpUrl(portalUrl).replace(/\/+$/, "");
   const server = `${portal}/sharing/rest`;
   const register = (token, expires) => IdentityManager.registerToken({ server, token, expires, userId, ssl: true });
-  clearTimeout(refreshTimer);
-  register(token, expires);
-  if (refreshToken) {
-    const refresh = async () => {
-      try {
-        // Bounded: a replayed login waits for it, and every later command waits behind that login.
-        const response = await fetch(`${server}/oauth2/token`, { method: "POST", signal: AbortSignal.timeout(15_000), body: new URLSearchParams({
-          grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken, f: "json",
-        }) });
-        const result = await response.json();
-        // No lifetime: the next timer would get NaN and fire at once, again and again.
-        if (!result.access_token || !Number.isFinite(result.expires_in)) throw new Error(result.error?.message ?? `HTTP ${response.status}`);
-        const next = Date.now() + result.expires_in * 1000;
-        register(result.access_token, next);
-        refreshTimer = setTimeout(refresh, Math.max(next - Date.now() - 120_000, 10_000));
-      } catch (error) {
-        console.error("map-pane: token refresh failed; run bin/map-command login again", error.message);
-      }
-    };
-    // The bridge replays the first login to a page that opens later: by then the token may have expired,
-    // and the log that follows needs a good one. Renew before answering.
-    if (expires - Date.now() < 120_000) await refresh();
-    else refreshTimer = setTimeout(refresh, expires - Date.now() - 120_000);
+  const renew = async () => {
+    const response = await fetch(`${server}/oauth2/token`, { method: "POST", signal: AbortSignal.timeout(15_000), body: new URLSearchParams({
+      grant_type: "refresh_token", client_id: clientId, refresh_token: refreshToken, f: "json",
+    }) });
+    const result = await response.json();
+    if (!result.access_token || !Number.isFinite(result.expires_in) || result.expires_in <= 0) {
+      throw new Error(result.error?.message ?? "Token refresh returned no usable credential");
+    }
+    token = result.access_token;
+    expires = Date.now() + result.expires_in * 1000;
+  };
+  const schedule = () => {
+    if (refreshToken) refreshTimer = setTimeout(refresh, Math.max(expires - Date.now() - 120_000, 10_000));
+  };
+  const refresh = async () => {
+    try {
+      await renew();
+      if (activeLogin !== refresh) return;
+      register(token, expires);
+      schedule();
+    } catch (error) {
+      console.error("map-pane: token refresh failed; run bin/map-command login again", error.message);
+    }
+  };
+  if (refreshToken && expires - Date.now() < 120_000) {
+    try { await renew(); } catch (error) {
+      if (expires <= Date.now()) throw new Error(`Token refresh failed: ${error.message}. Run login again`);
+    }
   }
+  if (expires <= Date.now()) throw new Error("Token expired. Run login again");
+  register(token, expires);
+  clearTimeout(refreshTimer);
+  activeLogin = refresh;
+  schedule();
   signedInPortal = portal;
   return { user: userId, portal, expires: new Date(expires).toISOString() };
 }
@@ -98,10 +109,20 @@ function featureCollection(layer) {
 }
 const GEOMETRY = { point: "esriGeometryPoint", multipoint: "esriGeometryMultipoint", polyline: "esriGeometryPolyline", polygon: "esriGeometryPolygon" };
 
+const isBridgeFile = url => url && new URL(url, location.href).href.startsWith(`${location.origin}/files/`);
+// A Parquet layer has no layer.url: its files are in data.urls (urls before SDK 5.1).
+const list = urls => urls?.toArray?.() ?? urls ?? [];
+const isBridgeLayer = layer => [layer.url, ...list(layer.data?.urls), ...list(layer.urls)].some(isBridgeFile);
+
 async function saveWebMap(view, { title }) {
   if (typeof title !== "string" || !title.trim()) throw new Error("save-webmap needs a title");
   if (!signedInPortal) throw new Error("save-webmap needs a sign-in. Run bin/map-command login first");
   const layers = view.map.layers.toArray();
+  const refuseBridgeLayers = (all) => {
+    const temporary = all.filter(isBridgeLayer);
+    if (temporary.length) throw new Error(`Cannot save layers served by the local bridge: ${temporary.map(layer => layer.title || layer.id).join(", ")}. Use a permanent URL, or import the data as GeoJSON with graphics and remove the local layer.`);
+  };
+  refuseBridgeLayers((view.map.allLayers ?? view.map.layers).toArray());
   const unsupported = layers.find((layer) => layer.type === "graphics");
   if (unsupported) throw new Error(`Layer ${unsupported.title} has mixed geometry and cannot be saved`);
   const [WebMap, Portal] = await Promise.all([
@@ -111,6 +132,8 @@ async function saveWebMap(view, { title }) {
   const webmap = new WebMap({
     basemap: view.map.basemap.clone(), layers: layers.filter((layer) => !local(layer)).map((layer) => layer.clone()),
   });
+  // Again on the clones that saveAs writes: page code can add a layer to a group while the imports load.
+  refuseBridgeLayers(webmap.allLayers.toArray());
   // Stores the view's viewpoint and a thumbnail in the item.
   await webmap.updateFrom(view);
   const portal = new Portal({ url: signedInPortal, authMode: "immediate" });
@@ -120,8 +143,8 @@ async function saveWebMap(view, { title }) {
   if (layers.some(local)) {
     try {
       const data = await item.fetchData();
-      const saved = [...(data.operationalLayers ?? [])];
-      data.operationalLayers = layers.map((layer) => (local(layer) ? featureCollection(layer) : saved.shift()));
+      const saved = (data.operationalLayers ?? []).values();
+      data.operationalLayers = layers.map((layer) => (local(layer) ? featureCollection(layer) : saved.next().value));
       await item.update({ data });
     } catch (error) {
       throw new Error(`Item ${item.id} was created, but adding its client-side layers failed: ${error.message}`);
@@ -142,6 +165,7 @@ export async function portalBasemaps() {
   return (await portal.fetchBasemaps()).map((basemap) => ({ id: basemap.portalItem?.id, title: basemap.title }));
 }
 export const portalUrl = () => signedInPortal;
+export const portalItem = id => ({ id, ...(signedInPortal && { portal: { url: signedInPortal } }) });
 
 // The ops that app.js delegates here: go_to location, extent, login, save-webmap, graphics.
 // The bridge times commands out, so these take no AbortSignal.

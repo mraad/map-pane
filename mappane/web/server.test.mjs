@@ -290,7 +290,7 @@ test('a slow GeoPackage and a quick command get increasing delivery ids and reco
   const db = new DatabaseSync(file)
   try { db.exec(readFileSync(new URL('../test/fixtures/vector.sql', import.meta.url), 'utf8')) } finally { db.close() }
   let respond, accepted
-  const arrived = new Promise(resolve => { accepted = resolve })
+  let arrived = new Promise(resolve => { accepted = resolve })
   const server = createServer((req, res) => {
     respond = () => res.end(readFileSync(file))
     accepted()
@@ -316,6 +316,20 @@ test('a slow GeoPackage and a quick command get increasing delivery ids and reco
   await cmd('extent')
   await back.until(() => back.messages.some(m => m.op === 'extent'))
   assert.deepEqual(back.messages.map(m => m.op), ['extent'])
+  arrived = new Promise(resolve => { accepted = resolve })
+  const abandoned = cmd('geopackage', { url: downloadUrl })
+  await arrived
+  back.close()
+  tab.close()
+  for (let i = 0; i < 100 && JSON.parse((await call('GET', '/state')).text).isConnected; i++) await sleep(10)
+  respond()
+  assert.equal((await abandoned).status, 503)
+  const fresh = page()
+  t.after(() => fresh.close())
+  await fresh.ready
+  await cmd('extent')
+  await fresh.until(() => fresh.messages.some(m => m.op === 'extent'))
+  assert.equal(fresh.messages.filter(m => m.op === 'graphics').length, 1)
 })
 
 test('a page that failed and then closed does not decide for a page that has not answered yet', async t => {
@@ -398,21 +412,50 @@ test('a command one page refused and another never answered stays in the log: th
   later.close()
 })
 
-test('a page that opens after a login gets the login first, then the log', async () => {
+test('a page that opens after a login gets the login first, then the log', async t => {
   // Its own bridge: the login stays in memory and would reach every later test's pages.
   const own = await startBridge(OTHER_PORT)
-  const first = page({ port: OTHER_PORT })
+  t.after(() => stopBridge(own))
+  // Holds back its answer to T3 until `release`, so another page connects while that login is pending.
+  let release
+  const held = new Promise(resolve => { release = resolve })
+  const first = page({ port: OTHER_PORT, answer: m => (m.args?.token === 'T3' ? held.then(() => ({ ok: true, result: {} })) : { ok: true, result: {} }) })
+  t.after(() => first.close())
   await first.until(() => first.messages.length)
   assert.equal((await cmd('login', { token: 'T1', userId: 'u1' }, OTHER_PORT)).status, 200)
   assert.equal((await cmd('set_basemap', { basemap: 'arcgis/navigation' }, OTHER_PORT)).status, 200)
-  first.close()
   const later = page({ port: OTHER_PORT })
+  t.after(() => later.close())
   await later.until(() => later.messages.some(m => m.op === 'set_basemap'))
   const ops = later.messages.map(m => m.op)
   assert.equal(later.messages.find(m => m.op === 'login').args.token, 'T1')
   assert.ok(ops.indexOf('login') < ops.indexOf('set_basemap'), ops.join(' '))
   later.close()
-  await stopBridge(own)
+  const cursor = later.ids.at(-1)
+  assert.equal((await cmd('login', { token: 'T2' }, OTHER_PORT)).status, 200)
+  await cmd('set_basemap', { basemap: 'osm' }, OTHER_PORT)
+  const back = page({ port: OTHER_PORT, lastEventId: cursor })
+  t.after(() => back.close())
+  await back.until(() => back.messages.some(m => m.op === 'set_basemap'))
+  assert.deepEqual(back.messages.map(m => m.op), ['login', 'set_basemap'])
+  assert.equal(back.messages[0].args.token, 'T2')
+  back.close()
+  // A page that connects while T3 is pending is no target: it gets T2, then a command after T3.
+  const login = cmd('login', { token: 'T3' }, OTHER_PORT)
+  await first.until(() => first.messages.some(m => m.args?.token === 'T3'))
+  const mid = page({ port: OTHER_PORT })
+  t.after(() => mid.close())
+  await mid.until(() => mid.messages.some(m => m.op === 'login'))
+  release()
+  assert.equal((await login).status, 200)
+  await cmd('set_basemap', { basemap: 'topo' }, OTHER_PORT)
+  await mid.until(() => mid.messages.some(m => m.args?.basemap === 'topo'))
+  assert.deepEqual(mid.messages.filter(m => m.op === 'login').map(m => m.args.token), ['T2'])
+  mid.close()
+  const again = page({ port: OTHER_PORT, lastEventId: mid.ids.at(-1) })
+  t.after(() => again.close())
+  await again.until(() => again.messages.some(m => m.op === 'login'))
+  assert.equal(again.messages.find(m => m.op === 'login')?.args.token, 'T3', 'a reconnecting page gets the login it missed')
 })
 
 test('a screenshot is written to a PNG file; its path answers, not the picture', async () => {
