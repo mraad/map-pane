@@ -105,6 +105,7 @@ the data, popups, client-side layers, geometry operations. The map runs ArcGIS M
 - Return a short JSON-able value. The command prints `{"value": ..., "console": [...]}`; `console.log` lines land in `console`.
   Never return or log geometry in bulk: return counts, extents and attributes.
 - A throw exits 1 with the error and the console lines. Read it, fix the code, run it again.
+  Code that writes to a service: a write done before the throw stays; check the service before you run it again.
 - The code is sent as written: no placeholders. Write it to a file or pass it on stdin with a quoted heredoc
   (`scripts/map-command js - --read-only <<'EOF'`); a file name must end in `.js` or `.mjs`.
 - Code that only reads the map or moves the view: add `--read-only`.

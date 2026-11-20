@@ -164,7 +164,7 @@ test("after a sign-in, portal basemaps list the portal's gallery by item id", as
 test("a scheduled token refresh that fails is tried again until it succeeds", async (t) => {
   const previous = { arcgis: globalThis.$arcgis, fetch: globalThis.fetch, error: console.error };
   t.after(() => { globalThis.$arcgis = previous.arcgis; globalThis.fetch = previous.fetch; console.error = previous.error; });
-  t.mock.timers.enable({ apis: ["setTimeout"] });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() }); // Date too: the 2-minute boundary stays exact
   console.error = () => {};
   const registered = [];
   globalThis.$arcgis = { import: async () => ({ registerToken: ({ token }) => registered.push(token) }) };

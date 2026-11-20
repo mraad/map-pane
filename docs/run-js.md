@@ -58,6 +58,7 @@ This is how a Ghostty split and a browser tab show the same map.
 - When more than one page is open, each page runs the code. The first page that succeeds gives the answer.
 - **Code that writes to a service or portal** (`applyEdits`, item updates): use `--read-only`, and keep only one map page open.
   Saved code runs again on each new page, and each open page runs the code, so each run writes again.
+  A write that completes before a throw is not undone. Check the service for it before you send the code again.
 - `clear` removes the saved commands and the layers.
 
 ## 2. Examples
