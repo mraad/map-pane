@@ -221,7 +221,8 @@ async function main() {
     const candidates = await Promise.all(entries.filter((name) => name.startsWith(PREFIX) && name.endsWith(".sock")).map(async (name) => {
       const path = join(tmpdir(), name);
       const info = await stat(path).catch(() => null);
-      return info?.isSocket() ? { path, time: info.mtimeMs } : null;
+      // Owner checked: on Linux tmpdir() is the shared /tmp, where another user could plant a socket with our name.
+      return info?.isSocket() && info.uid === process.getuid() ? { path, time: info.mtimeMs } : null;
     }));
     sockets = candidates.filter(Boolean).sort((a, b) => b.time - a.time).map((c) => c.path);
   }
