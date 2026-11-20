@@ -160,3 +160,31 @@ test("after a sign-in, portal basemaps list the portal's gallery by item id", as
   assert.deepEqual(await portalBasemaps(), [{ id: "a".repeat(32), title: "Topographic" }]);
   assert.equal(portalUrl, "https://portal.example.com/portal");
 });
+
+test("a scheduled token refresh that fails is tried again until it succeeds", async (t) => {
+  const previous = { arcgis: globalThis.$arcgis, fetch: globalThis.fetch, error: console.error };
+  t.after(() => { globalThis.$arcgis = previous.arcgis; globalThis.fetch = previous.fetch; console.error = previous.error; });
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() }); // Date too: the 2-minute boundary stays exact
+  console.error = () => {};
+  const registered = [];
+  globalThis.$arcgis = { import: async () => ({ registerToken: ({ token }) => registered.push(token) }) };
+  let calls = 0;
+  globalThis.fetch = async () => {
+    if (++calls === 1) throw new Error("network down");
+    return { status: 200, json: async () => ({ access_token: "renewed", expires_in: 3600 }) };
+  };
+  const flush = () => new Promise((done) => setImmediate(done));
+  // Expires in 2 minutes: the refresh is scheduled at the 10 s floor.
+  await runMapCommand({}, { command: "login", portalUrl: "https://portal.example.com", clientId: "c", token: "t", userId: "u", refreshToken: "r", expires: Date.now() + 120_000 });
+  assert.deepEqual(registered, ["t"]);
+  t.mock.timers.tick(10_000);
+  await flush();
+  assert.equal(calls, 1);
+  assert.deepEqual(registered, ["t"], "a failed refresh registers nothing");
+  t.mock.timers.tick(60_000);
+  await flush();
+  assert.equal(calls, 2, "the failed refresh was tried again");
+  assert.deepEqual(registered, ["t", "renewed"]);
+  // Leaves no timer behind for the tests that follow.
+  await runMapCommand({}, { command: "login", portalUrl: "https://portal.example.com", clientId: "c", token: "t", userId: "u", expires: Date.now() + 3_600_000 });
+});

@@ -44,7 +44,7 @@ Start view, set on the launcher (for example `MAP_PANE_CENTER=51.5074,-0.1278 MA
 longitude/latitude; overrides center and zoom). None set: the world on `osm`. A bad value stops the launcher.
 
 The CLI targets the newest map bridge of the current user. If several maps run, identify the intended one
-and set its socket, `<Node tmpdir>/map-pane-command-<uid>-<server-pid>.sock`, on every command:
+and set its socket, `<Node tmpdir>/map-pane-<uid>/command-<server-pid>.sock`, on every command:
 `MAP_PANE_SOCKET=/absolute/path.sock scripts/map-command extent`. `scripts/map-command --info` prints the
 page URL of the targeted map. Every page of one bridge shows the same map.
 
@@ -105,6 +105,7 @@ the data, popups, client-side layers, geometry operations. The map runs ArcGIS M
 - Return a short JSON-able value. The command prints `{"value": ..., "console": [...]}`; `console.log` lines land in `console`.
   Never return or log geometry in bulk: return counts, extents and attributes.
 - A throw exits 1 with the error and the console lines. Read it, fix the code, run it again.
+  Code that writes to a service: a write done before the throw stays; check the service before you run it again.
 - The code is sent as written: no placeholders. Write it to a file or pass it on stdin with a quoted heredoc
   (`scripts/map-command js - --read-only <<'EOF'`); a file name must end in `.js` or `.mjs`.
 - Code that only reads the map or moves the view: add `--read-only`.
@@ -133,7 +134,8 @@ EOF
 Statistics use `outStatistics: [{ statisticType: "max", onStatisticField: "f", outStatisticFieldName: "top" }]`;
 a count uses `layer.queryFeatureCount({ where })`.
 
-Change the map (saved, replayed):
+Change the map (saved, replayed). Code that writes to a service or portal (`applyEdits`, item updates) must use `--read-only`
+with only one map page open: each open page runs it, and saved code runs again on each new page.
 
 ```sh
 scripts/map-command js - <<'EOF'

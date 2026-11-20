@@ -16,7 +16,6 @@ geopackage <url> [table]
 graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>]
 save-webmap <title>
 js <code> [--timeout <ms>] [--read-only]`;
-export const COMMANDS = HELP.split("\n").map((line) => line.split(" ")[0]);
 
 // All 2D basemap ids the SDK accepts. Legacy ids need no sign-in; keyless ids are Esri raster tiles (app.js KEYLESS).
 // Style ids come from https://basemapstyles-api.arcgis.com/arcgis/rest/services/styles/v2/styles/self

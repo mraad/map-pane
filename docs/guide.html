@@ -393,6 +393,7 @@ mappane/bin/map-command zoom</code></pre>
   <li><b>Default:</b> the bridge saves the code. The code runs again on each new page and after a reload. Write code that gives the same result on a new page.</li>
   <li><b>A new layer:</b> give it <code>id: layerId</code> and a title. For more than one layer, use <code>`${layerId}-1`</code>, <code>`${layerId}-2`</code>. Then <code>remove</code>, <code>zoom</code> and <code>update-layer</code> find the layer on each page.</li>
   <li><b><code>--read-only</code>:</b> use it for code that only reads the map or moves the view. The bridge does not save this code.</li>
+  <li><b>Code that writes to a service or portal:</b> use <code>--read-only</code>. Keep only one map page open. Each open page runs the code. Saved code runs again on each new page.</li>
   <li>Code that fails is not saved. Code that passed the deadline is a failure. It can still complete on its page. Examine the map before you send the code again.</li>
   <li>Code that blocks the page (a loop that does not end) gets no answer. After 65 s the command fails, and the bridge does not save the code.</li>
   <li><code>clear</code> removes the saved commands and the layers.</li>
@@ -545,7 +546,7 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
 <!-- 14 -->
 <h2 id="several"><span class="n">14</span>Several maps</h2>
 <p>The CLI sends each command to the newest bridge of your user. To select a different map, set its socket on each command:</p>
-<pre><code>MAP_PANE_SOCKET="$(node -p 'require("os").tmpdir()')/map-pane-command-$(id -u)-&lt;bridge-pid&gt;.sock" \
+<pre><code>MAP_PANE_SOCKET="$(node -p 'require("os").tmpdir()')/map-pane-$(id -u)/command-&lt;bridge-pid&gt;.sock" \
   mappane/bin/map-command extent</code></pre>
 <ul>
   <li><code>mappane/bin/map-command --info</code> prints the page URL of the map that the CLI uses.</li>
@@ -555,7 +556,7 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
 
 <!-- 15 -->
 <h2 id="bridge"><span class="n">15</span>The bridge</h2>
-<p>The bridge is one Node.js process. The launcher starts it on a free port (port 0) when no bridge answers. The bridge listens on TCP <code>127.0.0.1:&lt;port&gt;</code> and on a Unix socket, <code>&lt;tmpdir&gt;/map-pane-command-&lt;uid&gt;-&lt;pid&gt;.sock</code>, mode 0600.</p>
+<p>The bridge is one Node.js process. The launcher starts it on a free port (port 0) when no bridge answers. The bridge listens on TCP <code>127.0.0.1:&lt;port&gt;</code> and on a Unix socket, <code>&lt;tmpdir&gt;/map-pane-&lt;uid&gt;/command-&lt;pid&gt;.sock</code>, mode 0600. The folder must be owner-only (mode 0700).</p>
 <h3>Endpoints</h3>
 <div class="table"><table>
   <thead><tr><th>Endpoint</th><th>Caller</th><th>Purpose</th></tr></thead>

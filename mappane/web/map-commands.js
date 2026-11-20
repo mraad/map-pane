@@ -35,7 +35,9 @@ async function login(IdentityManager, { portalUrl, clientId, token, expires, use
       register(token, expires);
       schedule();
     } catch (error) {
-      console.error("map-pane: token refresh failed; run bin/map-command login again", error.message);
+      console.error("map-pane: token refresh failed; retrying in 60 s", error.message);
+      // A wake from sleep can fire the timer before the network is back: try again, not give up.
+      if (activeLogin === refresh) refreshTimer = setTimeout(refresh, 60_000);
     }
   };
   if (refreshToken && expires - Date.now() < 120_000) {
