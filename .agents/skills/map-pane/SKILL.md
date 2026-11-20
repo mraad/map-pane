@@ -133,7 +133,8 @@ EOF
 Statistics use `outStatistics: [{ statisticType: "max", onStatisticField: "f", outStatisticFieldName: "top" }]`;
 a count uses `layer.queryFeatureCount({ where })`.
 
-Change the map (saved, replayed):
+Change the map (saved, replayed). Code that writes to a service or portal (`applyEdits`, item updates) must use `--read-only`
+with only one map page open: each open page runs it, and saved code runs again on each new page.
 
 ```sh
 scripts/map-command js - <<'EOF'

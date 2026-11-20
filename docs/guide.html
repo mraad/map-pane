@@ -393,6 +393,7 @@ mappane/bin/map-command zoom</code></pre>
   <li><b>Default:</b> the bridge saves the code. The code runs again on each new page and after a reload. Write code that gives the same result on a new page.</li>
   <li><b>A new layer:</b> give it <code>id: layerId</code> and a title. For more than one layer, use <code>`${layerId}-1`</code>, <code>`${layerId}-2`</code>. Then <code>remove</code>, <code>zoom</code> and <code>update-layer</code> find the layer on each page.</li>
   <li><b><code>--read-only</code>:</b> use it for code that only reads the map or moves the view. The bridge does not save this code.</li>
+  <li><b>Code that writes to a service or portal:</b> use <code>--read-only</code>. Keep only one map page open. Each open page runs the code. Saved code runs again on each new page.</li>
   <li>Code that fails is not saved. Code that passed the deadline is a failure. It can still complete on its page. Examine the map before you send the code again.</li>
   <li>Code that blocks the page (a loop that does not end) gets no answer. After 65 s the command fails, and the bridge does not save the code.</li>
   <li><code>clear</code> removes the saved commands and the layers.</li>
