@@ -11,7 +11,7 @@ agent (skill) or shell ── bin/map-command (cli/command.mjs) ──socket─�
                                      └─ browser: bin/map-pane --browser, or any tab
 ```
 
-- **Bridge** (`web/server.mjs`): one process. `bin/map-pane` starts one on port 0 when no bridge answers (detached with `--browser`, stopped by `--close`). It also listens on a Unix socket, `<tmpdir>/map-pane-command-<uid>-<pid>.sock`, mode 0600.
+- **Bridge** (`web/server.mjs`): one process. `bin/map-pane` starts one on port 0 when no bridge answers (detached with `--browser`, stopped by `--close`). It also listens on a Unix socket, `<tmpdir>/map-pane-<uid>/command-<pid>.sock`, mode 0600, in a folder that must be owner-only (0700; the bridge and CLI refuse another).
 - **Pages**: any number. Each reads commands from `GET /events` (SSE) and runs them one at a time.
 - **CLI** (`cli/command.mjs`): parses the ghostty-style verbs (`web/commands.js`), turns them into `{op, args}` (`toOp`), and posts them to the newest socket. `login` runs the PKCE flow in the CLI and sends the token as a `login` op; `login --arcctl` sends the session `arcctl login` saved instead.
 

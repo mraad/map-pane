@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import http from "node:http";
 import { copyFile, readFile, readdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { text as readText } from "node:stream/consumers";
@@ -9,8 +9,19 @@ import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { BASEMAPS, HELP, httpUrl, parseCommand } from "../web/commands.js";
 
-const PREFIX = `map-pane-command-${process.getuid()}-`;
-export const commandSocket = (pid) => join(tmpdir(), `${PREFIX}${pid}.sock`);
+// An owner-only folder: on Linux tmpdir() is the shared /tmp, where another user could create a socket
+// with our name (even at the path of a bridge that just exited) and receive a login token.
+const SOCKET_DIR = join(tmpdir(), `map-pane-${process.getuid()}`);
+export const commandSocket = (pid) => join(SOCKET_DIR, `command-${pid}.sock`);
+/** The socket folder, created if needed; throws unless it is a real folder that only this user owns and opens. */
+export function socketDir() {
+  mkdirSync(SOCKET_DIR, { recursive: true, mode: 0o700 });
+  const info = lstatSync(SOCKET_DIR);
+  if (!info.isDirectory() || info.uid !== process.getuid() || info.mode & 0o077) {
+    throw new Error(`${SOCKET_DIR} must be a folder that only you own (chmod 700)`);
+  }
+  return SOCKET_DIR;
+}
 
 // One request to the bridge over its socket. POST /cmd answers {ok, result, error, state}.
 export function request(socketPath, path, body) {
@@ -217,12 +228,12 @@ async function main() {
   const { file, ...command } = name === "--info" ? {} : { ...parseCommand(`${name} ${text}`), ...(name === "login" ? {} : options) };
   let sockets = [process.env.MAP_PANE_SOCKET];
   if (!sockets[0]) {
-    const entries = await readdir(tmpdir());
-    const candidates = await Promise.all(entries.filter((name) => name.startsWith(PREFIX) && name.endsWith(".sock")).map(async (name) => {
-      const path = join(tmpdir(), name);
+    const dir = socketDir();
+    const entries = await readdir(dir);
+    const candidates = await Promise.all(entries.filter((name) => name.startsWith("command-") && name.endsWith(".sock")).map(async (name) => {
+      const path = join(dir, name);
       const info = await stat(path).catch(() => null);
-      // Owner checked: on Linux tmpdir() is the shared /tmp, where another user could plant a socket with our name.
-      return info?.isSocket() && info.uid === process.getuid() ? { path, time: info.mtimeMs } : null;
+      return info?.isSocket() ? { path, time: info.mtimeMs } : null;
     }));
     sockets = candidates.filter(Boolean).sort((a, b) => b.time - a.time).map((c) => c.path);
   }

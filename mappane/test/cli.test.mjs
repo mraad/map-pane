@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { createHash } from "node:crypto";
@@ -352,6 +352,22 @@ test("basemap list with no running map prints the built-in ids and says why", as
   const current = cli(["basemap"], { env: { TMPDIR: mkdtempSync(join(tmp, "no-map-")) } });
   assert.equal(await current.exited, 1);
   assert.match(current.err(), /No running map found/);
+});
+
+test("the CLI and the bridge refuse a socket folder that other users can open", async () => {
+  const dir = mkdtempSync(join(tmp, "shared-"));
+  mkdirSync(join(dir, `map-pane-${process.getuid()}`), { mode: 0o755 });
+  chmodSync(join(dir, `map-pane-${process.getuid()}`), 0o755);
+  const run = cli(["extent"], { env: { TMPDIR: dir } });
+  assert.equal(await run.exited, 1);
+  assert.match(run.err(), /must be a folder that only you own/);
+  const other = spawn(process.execPath, [join(ROOT, "web/server.mjs"), "0"], { env: { ...process.env, TMPDIR: dir } });
+  try {
+    let err = "";
+    other.stderr.on("data", (d) => { err += d; });
+    await new Promise((ok) => other.stderr.on("data", () => /command socket:/.test(err) && ok()));
+    assert.match(err, /command socket: .*must be a folder that only you own/);
+  } finally { other.kill(); }
 });
 
 test("update-layer needs one valid change", () => {

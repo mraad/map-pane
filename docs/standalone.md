@@ -279,7 +279,7 @@ The CLI sends each command to the newest bridge of your user.
 To choose another map, set its socket on each command:
 
 ```sh
-MAP_PANE_SOCKET="$(node -p 'require("os").tmpdir()')/map-pane-command-$(id -u)-<bridge-pid>.sock" mappane/bin/map-command extent
+MAP_PANE_SOCKET="$(node -p 'require("os").tmpdir()')/map-pane-$(id -u)/command-<bridge-pid>.sock" mappane/bin/map-command extent
 ```
 
 Each bridge can have many pages open (panes, browsers). All pages of one bridge show the same map.

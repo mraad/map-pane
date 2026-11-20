@@ -16,7 +16,7 @@ import { basename, dirname, join } from 'node:path'
 import { text } from 'node:stream/consumers'
 
 import { startView } from './commands.js'
-import { commandSocket } from '../cli/command.mjs'
+import { commandSocket, socketDir } from '../cli/command.mjs'
 
 // 0 lets the OS choose a free port.
 const PORT = Number(process.argv[2] ?? process.env.PORT ?? 0)
@@ -358,6 +358,11 @@ const commands = createServer(handler)
 commands.on('error', err => console.error(`command socket: ${err.message}`))
 // Listens after the TCP port, so `bridge:` stays the first stdout line (the launcher and tests read it).
 function listenSocket() {
+  try {
+    socketDir()
+  } catch (err) {
+    return console.error(`command socket: ${err.message}`)
+  }
   rmSync(SOCKET, { force: true }) // left by a killed bridge with the same pid
   commands.listen(SOCKET, () => {
     chmodSync(SOCKET, 0o600)

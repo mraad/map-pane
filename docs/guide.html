@@ -546,7 +546,7 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
 <!-- 14 -->
 <h2 id="several"><span class="n">14</span>Several maps</h2>
 <p>The CLI sends each command to the newest bridge of your user. To select a different map, set its socket on each command:</p>
-<pre><code>MAP_PANE_SOCKET="$(node -p 'require("os").tmpdir()')/map-pane-command-$(id -u)-&lt;bridge-pid&gt;.sock" \
+<pre><code>MAP_PANE_SOCKET="$(node -p 'require("os").tmpdir()')/map-pane-$(id -u)/command-&lt;bridge-pid&gt;.sock" \
   mappane/bin/map-command extent</code></pre>
 <ul>
   <li><code>mappane/bin/map-command --info</code> prints the page URL of the map that the CLI uses.</li>
@@ -556,7 +556,7 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
 
 <!-- 15 -->
 <h2 id="bridge"><span class="n">15</span>The bridge</h2>
-<p>The bridge is one Node.js process. The launcher starts it on a free port (port 0) when no bridge answers. The bridge listens on TCP <code>127.0.0.1:&lt;port&gt;</code> and on a Unix socket, <code>&lt;tmpdir&gt;/map-pane-command-&lt;uid&gt;-&lt;pid&gt;.sock</code>, mode 0600.</p>
+<p>The bridge is one Node.js process. The launcher starts it on a free port (port 0) when no bridge answers. The bridge listens on TCP <code>127.0.0.1:&lt;port&gt;</code> and on a Unix socket, <code>&lt;tmpdir&gt;/map-pane-&lt;uid&gt;/command-&lt;pid&gt;.sock</code>, mode 0600. The folder must be owner-only (mode 0700).</p>
 <h3>Endpoints</h3>
 <div class="table"><table>
   <thead><tr><th>Endpoint</th><th>Caller</th><th>Purpose</th></tr></thead>

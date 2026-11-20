@@ -44,7 +44,7 @@ Start view, set on the launcher (for example `MAP_PANE_CENTER=51.5074,-0.1278 MA
 longitude/latitude; overrides center and zoom). None set: the world on `osm`. A bad value stops the launcher.
 
 The CLI targets the newest map bridge of the current user. If several maps run, identify the intended one
-and set its socket, `<Node tmpdir>/map-pane-command-<uid>-<server-pid>.sock`, on every command:
+and set its socket, `<Node tmpdir>/map-pane-<uid>/command-<server-pid>.sock`, on every command:
 `MAP_PANE_SOCKET=/absolute/path.sock scripts/map-command extent`. `scripts/map-command --info` prints the
 page URL of the targeted map. Every page of one bridge shows the same map.
 
