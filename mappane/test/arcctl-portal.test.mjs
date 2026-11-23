@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -74,8 +74,9 @@ test("login --arcctl signs the page in to the real portal and never prints the t
   assert.deepEqual(readFileSync(join(DIR, "config.json")), before, "map-pane never writes arcctl's file");
 });
 
-test("an expired access token is renewed with arcctl's client id; arcctl's file stays as it is", { skip, timeout: 60_000 }, async () => {
+test("an expired access token is renewed with arcctl's client id; arcctl's file stays as it is", { skip, timeout: 60_000 }, async (t) => {
   const copy = mkdtempSync(join(tmpdir(), "arcctl-copy-"));
+  t.after(() => rmSync(copy, { recursive: true, force: true })); // it holds the session's tokens
   const config = JSON.parse(readFileSync(join(DIR, "config.json"), "utf8"));
   config.session.expires_at = new Date(Date.now() - 1000).toISOString();
   writeFileSync(join(copy, "config.json"), JSON.stringify(config));
