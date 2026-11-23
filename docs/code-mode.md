@@ -307,6 +307,8 @@ await map.command(toOp({ command: "extent" }))                                  
 
 `run` and `connect` use the `socket` option, else `MAP_PANE_SOCKET`, else every `command-*.sock` in the owner-only socket folder, newest first. With no socket chosen, a stale socket (`ENOENT`, `ECONNREFUSED`) is skipped and the next one is tried. With a socket chosen, that error is thrown with `noMap: true`.
 
+On Windows the same order applies to the `command-*.pipe` registry files in `%TEMP%\map-pane-<user>`. Each file holds the name of one bridge's pipe. `socket` and `MAP_PANE_SOCKET` take that pipe name (`--info` prints it), not the file. A registry file whose pipe is gone is deleted.
+
 ### Still exported
 
 `commandSocket(pid)`, `socketDir()`, `request(socketPath, path, body)`, `toOp(command)`, `arcctlSession()`. The bridge and the tests use them.

@@ -55,8 +55,8 @@ longitude/latitude; overrides center and zoom). None set: the world on `osm`. A 
 
 The CLI targets the newest map bridge of the current user. If several maps run, identify the intended one
 and set its socket, `<Node tmpdir>/map-pane-<uid>/command-<server-pid>.sock`, on every command:
-`MAP_PANE_SOCKET=/absolute/path.sock scripts/map-command extent`. `scripts/map-command --info` prints the
-page URL of the targeted map. Every page of one bridge shows the same map.
+`MAP_PANE_SOCKET=/absolute/path.sock scripts/map-command extent`. On Windows use the pipe name that
+`--info` prints as `socket`. `scripts/map-command --info` prints the page URL of the targeted map. Every page of one bridge shows the same map.
 
 ## Commands
 
