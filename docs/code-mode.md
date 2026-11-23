@@ -250,7 +250,7 @@ The route layer goes first, so the markers draw on top of it. Three map commands
 import { run, connect } from "map-pane"   // or "./mappane/cli/command.mjs"
 ```
 
-The `map-pane` name resolves from a project that depends on the package (git dependency, `npm link`), or inside the clone itself. The package has no dependencies; it needs Node 24.
+The `map-pane` name resolves from a project that depends on the package (git dependency, `npm link`), or inside the clone itself. The package has no dependencies; it needs Node 24.2 or later.
 
 ### `run(argv, { stdin, socket })`
 
@@ -306,6 +306,8 @@ await map.command(toOp({ command: "extent" }))                                  
 ### Which map
 
 `run` and `connect` use the `socket` option, else `MAP_PANE_SOCKET`, else every `command-*.sock` in the owner-only socket folder, newest first. With no socket chosen, a stale socket (`ENOENT`, `ECONNREFUSED`) is skipped and the next one is tried. With a socket chosen, that error is thrown with `noMap: true`.
+
+On Windows the same order applies to the `command-*.pipe` registry files in `%TEMP%\map-pane-<user>`. Each file holds the name of one bridge's pipe. `socket` and `MAP_PANE_SOCKET` take that pipe name (`--info` prints it), not the file. A registry file whose pipe is gone is deleted.
 
 ### Still exported
 

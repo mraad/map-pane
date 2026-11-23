@@ -1,0 +1,33 @@
+name: windows
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The platform-neutral suites. The other suites drive bash scripts and Unix sockets.
+      - run: node --test --test-timeout=120000 --test-concurrency=1 mappane/test/launch.test.mjs mappane/test/lib.test.mjs mappane/test/commands.test.mjs mappane/test/server-url.test.mjs mappane/test/manifests.test.mjs
+      - name: cmd wrappers
+        shell: cmd
+        env:
+          MAP_PANE_OPEN: "0"
+        # Without call, cmd never comes back from the first wrapper.
+        run: |
+          call mappane\bin\map-command.cmd --help || exit /b 1
+          call mappane\bin\map-pane.cmd --browser || exit /b 1
+          call mappane\bin\map-command.cmd --info || exit /b 1
+          call mappane\bin\map-pane.cmd --close || exit /b 1
+      - name: Git Bash wrapper
+        shell: bash
+        env:
+          MAP_PANE_OPEN: "0"
+        run: |
+          mappane/bin/map-pane --browser
+          mappane/bin/map-command --info
+          .agents/skills/map-pane/scripts/map-command --info
+          mappane/bin/map-pane --close

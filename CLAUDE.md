@@ -7,11 +7,12 @@ Guidance for agents working in this repository.
 A live web map (ArcGIS Maps SDK for JavaScript 5.2.2, vanilla JS, no build step) driven by agents.
 `mappane/` is the runtime (`mappane/bin/map-pane` Kitty pane or browser, `mappane/bin/map-command` CLI, bridge `web/server.mjs`).
 The CLI is a printer over `run()`/`connect()` exported by `mappane/cli/command.mjs` (package export `map-pane`); keep CLI behavior in `run`.
+`mappane/cli/platform.mjs` (Chrome path, opener, Windows pipe name), `cli/launch.mjs` (Node launcher for Windows: `--browser`, `--close`; bash `bin/map-pane` hands over to it under Git Bash/MSYS). `.cmd` files in `bin/` and the skill's `scripts/` are the cmd and PowerShell entry points.
 One skill, `.agents/skills/map-pane`, serves Claude Code, Codex and Pi. Claude Code finds it through the link
 `.claude/skills/map-pane` in a clone, or the skill-only plugin `.claude-plugin/plugin.json` (marketplace `.claude-plugin/marketplace.json`).
 Codex: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`. Pi: `package.json` `pi.skills`.
 Public repo `github.com/mraad/map-pane`. Version 0.5.0 dropped the Claude Code mod (`mappane`, `/map`, `mcp__mappane__*`).
-No npm dependencies: Node 24 stdlib, installed Chrome. Keep it that way.
+No npm dependencies: Node 24.2 stdlib, installed Chrome. Keep it that way.
 It replaces `mraad/claude-mod-map` and `mraad/ghostty-map-pane` (deprecated).
 
 Never put "arcgis" in a name we own (folders, plugin, tools, env vars, headers, paths, titles): it is a trademark.
@@ -46,6 +47,7 @@ Suites: `mappane/web/server.test.mjs` (bridge over TCP, ports 18765/18766), `map
 - `web/app.js` sets `window.view`; e2e tests use it.
 - Kitty pane: ack screencast frames in the `stdout.write` callback; frames use `q=2`; `quit()` cleans up on every exit path.
 - `--split` uses `initial input` + `exec`, and targets the launcher's tty.
+- Windows: no `process.getuid`, no Unix socket, no signals. Keep `ownerId()`, the named pipe + registry file, and `/shutdown` (socket only). `launch.test.mjs` runs on every platform; keep it free of bash.
 - Zoom only through `extentOf` in `app.js` (`queryExtent()` honours `definitionExpression`; one match uses the feature's geometry, since SDK 5.2 pads a one-point extent wrongly). GeoParquet with no `crs` gets OGC:CRS84.
 - One GeoJSON reader: `toGraphics` in `web/geojson.js` (ring order, checks) serves `add_graphic`, `graphics` and GeoPackage.
 - `shortcut:` comments mark accepted limits (growing log, inline GeoPackage log).

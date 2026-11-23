@@ -1,26 +1,57 @@
 #!/usr/bin/env node
 import http from "node:http";
 import { copyFile, readFile, readdir, rm, stat } from "node:fs/promises";
-import { existsSync, lstatSync, mkdirSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { text as readText } from "node:stream/consumers";
 import { createHash, randomBytes } from "node:crypto";
-import { spawn } from "node:child_process";
 import { BASEMAPS, HELP, httpUrl, parseCommand } from "../web/commands.js";
+import { IS_WINDOWS, openUrl, ownerId, windowsPipe } from "./platform.mjs";
 
 // An owner-only folder: on Linux tmpdir() is the shared /tmp, where another user could create a socket
 // with our name (even at the path of a bridge that just exited) and receive a login token.
-const SOCKET_DIR = join(tmpdir(), `map-pane-${process.getuid()}`);
-export const commandSocket = (pid) => join(SOCKET_DIR, `command-${pid}.sock`);
+// On Windows tmpdir() is already the user's own %TEMP%; the folder holds registry files, not sockets (below).
+const SOCKET_DIR = join(tmpdir(), `map-pane-${ownerId()}`);
+// Windows: a bridge listens on a named pipe (random part in its name) and lists it in command-<pid>.pipe, so the CLI finds it.
+// `secret` is required there; macOS and Linux ignore it.
+export const commandSocket = (pid, secret) => (IS_WINDOWS ? windowsPipe(pid, secret) : join(SOCKET_DIR, `command-${pid}.sock`));
+const registryFile = (pid) => join(SOCKET_DIR, `command-${pid}.pipe`);
+/** Windows: tell the CLI which pipe the bridge with this pid listens on. */
+export function registerPipe(pid, pipe) {
+  writeFileSync(registryFile(pid), pipe, { mode: 0o600 });
+}
+export function unregisterPipe(pid) {
+  rmSync(registryFile(pid), { force: true });
+}
 /** The socket folder, created if needed; throws unless it is a real folder that only this user owns and opens. */
 export function socketDir() {
   mkdirSync(SOCKET_DIR, { recursive: true, mode: 0o700 });
+  // Windows has no uid or mode bits to check: %TEMP% belongs to the user's profile.
+  if (IS_WINDOWS) return SOCKET_DIR;
   const info = lstatSync(SOCKET_DIR);
   if (!info.isDirectory() || info.uid !== process.getuid() || info.mode & 0o077) {
     throw new Error(`${SOCKET_DIR} must be a folder that only you own (chmod 700)`);
   }
   return SOCKET_DIR;
+}
+
+/** The bridges' sockets (named pipes on Windows), newest first. Each is {path, registry?}: registry is a Windows file to drop when its pipe is gone. */
+async function findSockets() {
+  const dir = socketDir();
+  const entries = await readdir(dir);
+  const suffix = IS_WINDOWS ? ".pipe" : ".sock";
+  const candidates = await Promise.all(entries.filter((name) => name.startsWith("command-") && name.endsWith(suffix)).map(async (name) => {
+    const file = join(dir, name);
+    const info = await stat(file).catch(() => null);
+    if (!info) return null;
+    if (IS_WINDOWS) {
+      const path = (await readFile(file, "utf8").catch(() => "")).trim();
+      return info.isFile() && path.startsWith("\\\\.\\pipe\\") ? { path, registry: file, time: info.mtimeMs } : null;
+    }
+    return info.isSocket() ? { path: file, time: info.mtimeMs } : null;
+  }));
+  return candidates.filter(Boolean).sort((a, b) => b.time - a.time);
 }
 
 // One request to the bridge over its socket. POST /cmd answers {ok, result, error, state}.
@@ -128,9 +159,7 @@ async function signIn({ portalUrl, clientId, redirectUri }) {
       ? new Error(`Port ${redirect.port} is busy: another login is waiting, or set --redirect-uri`) : error));
     server.listen(Number(redirect.port), redirect.hostname, () => {
       console.error(`Open this URL to sign in:\n${authorize}`);
-      if (process.platform === "darwin" && process.env.MAP_PANE_OPEN !== "0") {
-        spawn("open", [authorize], { stdio: "ignore" }).on("error", () => {}).unref();
-      }
+      if (process.env.MAP_PANE_OPEN !== "0" && (process.platform === "darwin" || IS_WINDOWS)) openUrl(authorize);
     });
   });
   const response = await fetch(`${portal}/sharing/rest/oauth2/token`, { method: "POST", body: new URLSearchParams({
@@ -154,7 +183,8 @@ export async function arcctlSession({ portalUrl } = {}) {
   const file = join(dir, "config.json");
   const info = await stat(file).catch(() => null);
   if (!info) throw new Error(`No arcctl session: ${file} does not exist. Run arcctl login first`);
-  if (info.uid !== process.getuid() || info.mode & 0o077) throw new Error(`${file} must belong to you and be private (chmod 600)`);
+  // Windows reports no owner or mode bits; the file sits in the user's own profile folder.
+  if (!IS_WINDOWS && (info.uid !== process.getuid() || info.mode & 0o077)) throw new Error(`${file} must belong to you and be private (chmod 600)`);
   const { session } = JSON.parse(await readFile(file, "utf8"));
   if (!session?.token || !session.portal) throw new Error(`No arcctl session in ${file}. Run arcctl login first`);
   if (!session.refresh_token || !session.client_id) throw new Error("The arcctl session cannot renew (generateToken login?). Run arcctl login (OAuth) first");
@@ -183,29 +213,19 @@ export async function arcctlSession({ portalUrl } = {}) {
   return { portalUrl: portal, clientId: session.client_id, token, expires, userId: username, refreshToken: session.refresh_token };
 }
 
-// The map sockets of this user, newest first.
-async function findSockets() {
-  const dir = socketDir();
-  const entries = await readdir(dir);
-  const candidates = await Promise.all(entries.filter((name) => name.startsWith("command-") && name.endsWith(".sock")).map(async (name) => {
-    const path = join(dir, name);
-    const info = await stat(path).catch(() => null);
-    return info?.isSocket() ? { path, time: info.mtimeMs } : null;
-  }));
-  return candidates.filter(Boolean).sort((a, b) => b.time - a.time).map((c) => c.path);
-}
-
 /** A client of one map: the socket given, else MAP_PANE_SOCKET, else the newest running map (stale sockets skipped). */
 export function connect({ socket } = {}) {
   const pinned = socket || process.env.MAP_PANE_SOCKET;
   const send = async (path, body) => {
     // Listed on every call: a map that restarted has a new socket.
-    for (const target of pinned ? [pinned] : await findSockets()) {
+    for (const target of pinned ? [{ path: pinned }] : await findSockets()) {
       try {
-        return await request(target, path, body);
+        return await request(target.path, path, body);
       } catch (error) {
         if (!["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
         if (pinned) throw Object.assign(error, { noMap: true });
+        // A killed Windows bridge leaves its registry file behind: drop it once its pipe is gone.
+        if (target.registry) rmSync(target.registry, { force: true });
       }
     }
     throw Object.assign(new Error("No running map found. Start bin/map-pane --split (or --browser) first."), { noMap: true });
