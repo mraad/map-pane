@@ -113,9 +113,11 @@ async function close() {
   // Only our bridge answers on our pipe, so a reused pid can never be stopped by mistake.
   if (socket) await stopBridge(socket);
   // Wait for it to go. Ask its TCP port: a bridge can run without its socket, and another bridge can reuse the port.
-  const runs = () => fetch(`${url}api/info`).then((r) => r.json()).then((info) => info.pid === Number(pid), () => false);
-  for (let i = 0; await runs(); i++) {
-    if (i === 50) throw new Error(`map-pane: the bridge at ${url} did not stop; stop process ${pid} yourself`);
+  // No answer by the deadline counts as running: the port may belong to another program that never answers.
+  const signal = AbortSignal.timeout(5000);
+  const runs = () => fetch(`${url}api/info`, { signal }).then((r) => r.json()).then((info) => info.pid === Number(pid), () => signal.aborted);
+  while (await runs()) {
+    if (signal.aborted) throw new Error(`map-pane: cannot confirm that the bridge at ${url} stopped; check process ${pid}`);
     await sleep(100);
   }
   rmSync(BROWSER_STATE, { force: true });
