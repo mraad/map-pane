@@ -29,7 +29,7 @@ export function request(socketPath, path, body) {
     const req = http.request({ socketPath, path, method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json" } }, (res) => {
       readText(res).then((text) => {
         const reply = JSON.parse(text);
-        if (res.statusCode !== 200 || reply.ok === false) throw new Error(reply.error ?? `HTTP ${res.statusCode}`);
+        if (res.statusCode !== 200 || reply.ok === false) throw Object.assign(new Error(reply.error ?? `HTTP ${res.statusCode}`), reply.noPage ? { noMap: true } : {});
         ok(reply);
       }).catch(fail);
     });
@@ -280,8 +280,11 @@ export async function run(argv, { stdin = process.stdin, socket } = {}) {
   let result = await map.command(toOp(command));
   // The bridge saves the PNG in its data folder: copy it to the file asked for.
   if (file) {
-    await copyFile(result.path, file);
-    await rm(result.path, { force: true }); // the bridge keeps its copy until it stops otherwise
+    try {
+      await copyFile(result.path, file);
+    } finally {
+      if (result?.path) await rm(result.path, { force: true }); // the bridge keeps its copy until it stops otherwise
+    }
     result = { file: resolve(file), width: result.width, height: result.height };
   }
   return result;
