@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -88,6 +88,21 @@ test("the bridge refuses /shutdown and hides its socket over TCP", { timeout: 30
   assert.equal(tcp.status, 200, "the bridge still runs");
   assert.equal((await tcp.json()).socket, null, "TCP callers do not learn the socket");
   assert.ok(JSON.parse((await run(process.execPath, [COMMAND, "--info"], { env })).stdout).socket, "socket callers do");
+});
+
+test("--browser fails and leaves no bridge when the bridge has no command socket", { timeout: 60000, skip: IS_WINDOWS && "Windows has no folder modes" }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "map-launch-test-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
+  const env = { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp, MAP_PANE_SOCKET: "", MAP_PANE_OPEN: "0" };
+  // A folder that others can open: the bridge refuses to put its socket there.
+  const dir = join(tmp, `map-pane-${ownerId()}`);
+  mkdirSync(dir);
+  chmodSync(dir, 0o755);
+  const error = await run(process.execPath, [LAUNCH, "--browser"], { env }).then(() => assert.fail("--browser succeeded"), (e) => e);
+  assert.match(error.stderr, /the bridge has no command socket/);
+  const url = /^bridge: (\S+)/m.exec(error.stderr)[1];
+  await assert.rejects(fetch(url), "the bridge is stopped");
+  assert.ok(!existsSync(join(tmp, `map-pane-browser-${ownerId()}`)), "nothing recorded");
 });
 
 test("the launcher drops a registry file only when its pipe is gone", { timeout: 60000, skip: !IS_WINDOWS && "Windows only" }, async (t) => {

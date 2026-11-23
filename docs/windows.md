@@ -8,7 +8,7 @@ There is no Ghostty split. The terminal pane (Kitty graphics) is untested on Win
 | Item | Requirement |
 |---|---|
 | Windows | 10 or 11 |
-| Node.js | 24 or later (`node --version`). No npm packages. |
+| Node.js | 24.2 or later (`node --version`). No npm packages. |
 | Browser | Any browser for `--browser`. Chrome or Edge only for the terminal pane. |
 | Network | Access to `js.arcgis.com` and the basemap tile servers |
 
@@ -63,7 +63,7 @@ Not checked on Windows: `login`, the terminal pane, Edge and the plugin install.
 
 | Symptom | Cause | Action |
 |---|---|---|
-| `'node' is not recognized` | Node is not on `PATH` | Install Node 24 and open a new terminal. |
+| `'node' is not recognized` | Node is not on `PATH` | Install Node 24.2 or later and open a new terminal. |
 | `No running map found` | No bridge, or a stale `.pipe` file | Run `map-pane.cmd --browser`. The CLI deletes stale registry files itself. |
 | `could not open a browser; open <url> yourself` | `rundll32` could not start the default browser | Open the printed URL. |
 | `cannot start Chrome at …` (pane only) | Chrome is not in Program Files | Set `CHROME` to `chrome.exe` or `msedge.exe`. |

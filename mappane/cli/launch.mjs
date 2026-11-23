@@ -24,7 +24,8 @@ const runningBridge = () => connect().info().catch(() => undefined);
 
 /**
  * Start a bridge and wait for its `bridge: <url>` line, then for its `SOCKET <path>` line (the CLI's door; null if
- * the bridge could not open one). detached: it outlives this launcher and the agent's shell.
+ * the bridge could not open one). detached: it outlives this launcher and the agent's shell; it must have a socket,
+ * because --close has no other way to stop it.
  * stdio goes to a log file, which the launcher reads.
  */
 async function startBridge({ detached }) {
@@ -50,6 +51,7 @@ async function startBridge({ detached }) {
       // The socket line follows the URL by a few milliseconds; "command socket:" is its failure line.
       for (let i = 0; i < 20 && !/^(SOCKET |command socket:)/m.test(readFileSync(log, "utf8")); i++) await sleep(100);
       const socket = /^SOCKET (.+)$/m.exec(readFileSync(log, "utf8"))?.[1] ?? null;
+      if (detached && !socket) fail("map-pane: the bridge has no command socket");
       if (detached) child.unref();
       return { child, url, log, socket };
     }
@@ -62,6 +64,8 @@ async function startBridge({ detached }) {
 /** Ask a bridge to stop itself over its own socket or pipe; true when it answered. */
 const stopBridge = (socket) => request(socket, "/shutdown", {}).then(() => true, () => false);
 
+// shortcut: two --browser calls at the same moment can start two bridges, and --close stops the last one recorded
+// (bin/map-pane too); lock the state file when launchers run in parallel.
 async function browser() {
   let info = await runningBridge();
   if (!info) {

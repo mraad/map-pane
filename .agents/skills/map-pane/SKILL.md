@@ -9,7 +9,7 @@ argument-hint: "open [browser] | close [browser] | extent | basemap [list | <id>
 Run `scripts/map-command` and `scripts/map-pane` from this skill's folder (call them by that folder's absolute path).
 Run them from the user's working folder: relative file arguments (`./f.geojson`, `./map.png`) resolve there.
 Successful commands print JSON and exit 0; errors exit 1. `scripts/map-command --help` prints the syntax.
-Requirements: shell access as the same user and on the same machine as the map bridge, and Node.js 24+.
+Requirements: shell access as the same user and on the same machine as the map bridge, and Node.js 24.2+.
 Opening a split also needs macOS, Ghostty and Chrome.
 On Windows only the browser map works (`--browser`); there is no split.
 

@@ -250,7 +250,7 @@ The route layer goes first, so the markers draw on top of it. Three map commands
 import { run, connect } from "map-pane"   // or "./mappane/cli/command.mjs"
 ```
 
-The `map-pane` name resolves from a project that depends on the package (git dependency, `npm link`), or inside the clone itself. The package has no dependencies; it needs Node 24.
+The `map-pane` name resolves from a project that depends on the package (git dependency, `npm link`), or inside the clone itself. The package has no dependencies; it needs Node 24.2 or later.
 
 ### `run(argv, { stdin, socket })`
 

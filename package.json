@@ -6,7 +6,7 @@
   "private": true,
   "keywords": ["pi-package"],
   "exports": { ".": "./mappane/cli/command.mjs" },
-  "engines": { "node": ">=24" },
+  "engines": { "node": ">=24.2" },
   "pi": { "skills": ["./.agents/skills"] },
   "scripts": {
     "split": "mappane/bin/map-pane --split",

@@ -14,7 +14,7 @@ All paths in this guide start at the repository folder.
 |---|---|
 | Operating system | macOS. `--split` uses AppleScript. |
 | Terminal | Ghostty 1.4 or later for `--split`. The pane works in any terminal with Kitty graphics and SGR pixel mouse. |
-| Node.js | 24 or later. No npm packages. |
+| Node.js | 24.2 or later. No npm packages. |
 | Browser | Google Chrome, or `chrome-headless-shell`. Set `CHROME` if Chrome is not in `/Applications`. |
 | Network | Access to `js.arcgis.com` and the basemap tile servers |
 

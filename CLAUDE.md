@@ -12,7 +12,7 @@ One skill, `.agents/skills/map-pane`, serves Claude Code, Codex and Pi. Claude C
 `.claude/skills/map-pane` in a clone, or the skill-only plugin `.claude-plugin/plugin.json` (marketplace `.claude-plugin/marketplace.json`).
 Codex: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`. Pi: `package.json` `pi.skills`.
 Public repo `github.com/mraad/map-pane`. Version 0.5.0 dropped the Claude Code mod (`mappane`, `/map`, `mcp__mappane__*`).
-No npm dependencies: Node 24 stdlib, installed Chrome. Keep it that way.
+No npm dependencies: Node 24.2 stdlib, installed Chrome. Keep it that way.
 It replaces `mraad/claude-mod-map` and `mraad/ghostty-map-pane` (deprecated).
 
 Never put "arcgis" in a name we own (folders, plugin, tools, env vars, headers, paths, titles): it is a trademark.

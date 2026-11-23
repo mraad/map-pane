@@ -1,5 +1,7 @@
 name: windows
 on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
 jobs:
   windows:
     runs-on: windows-latest
@@ -14,11 +16,12 @@ jobs:
         shell: cmd
         env:
           MAP_PANE_OPEN: "0"
+        # Without call, cmd never comes back from the first wrapper.
         run: |
-          mappane\bin\map-command.cmd --help
-          mappane\bin\map-pane.cmd --browser
-          mappane\bin\map-command.cmd --info
-          mappane\bin\map-pane.cmd --close
+          call mappane\bin\map-command.cmd --help || exit /b 1
+          call mappane\bin\map-pane.cmd --browser || exit /b 1
+          call mappane\bin\map-command.cmd --info || exit /b 1
+          call mappane\bin\map-pane.cmd --close || exit /b 1
       - name: Git Bash wrapper
         shell: bash
         env:
