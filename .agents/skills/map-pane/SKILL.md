@@ -152,6 +152,31 @@ EOF
 
 More examples (computed range, buffers as a new layer, features in view, fetch): `../../../docs/run-js.md`.
 
+## Code mode and Node
+
+Claude Code code mode: the REPL cannot import modules or open sockets, so call the CLI through `$`.
+`$` quotes each `${}` value (an array: one argument per item), so JSON and place names need no shell escaping.
+Chain several calls in one script and act on each JSON result. Await each change before the next (no `Promise.all`): layer ids follow arrival order.
+`$` has no stdin in the REPL: write generated GeoJSON with `write()` and pass the path. Put `js` page code in a plain string, not a template literal.
+
+```js
+const S = "<this skill's folder>/scripts"
+const parse = (r) => {
+  if (r.exitCode) throw new Error(r.stdout.trim())
+  const out = r.stdout, start = out.search(/^[[{]/m) // stderr is merged: skip notes (login URL) before the JSON
+  return start < 0 ? out : JSON.parse(out.slice(start))
+}
+const map = async (...argv) => parse(await $`${S}/map-command ${argv}`.nothrow())
+await map("go_to", "coordinate", 35.68, 139.65, 6)
+const { layers } = await map("graphics", "./cities.geojson", "--title", "Cities", "--renderer", JSON.stringify(renderer))
+await map("zoom", layers[0].id)
+```
+
+Node scripts (Pi extensions, tests) import the same commands: `import { run, connect } from "map-pane"` (or `mappane/cli/command.mjs`).
+`run(["go_to", "location", "Tokyo"])` resolves the JSON that `map-command` prints and throws its error.
+`connect({ socket }).command({ op, args })` sends one bridge op (`docs/architecture.md`, "Ops").
+Full guide (helper, recipes, worked example, API reference): `../../../docs/code-mode.md`.
+
 ## Results and retries
 
 - Trust a successful command's JSON. Do not screenshot after every change.

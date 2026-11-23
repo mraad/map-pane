@@ -72,6 +72,8 @@ skill ──> bin/map-command ──Unix socket──> bridge (mappane/web/serve
 
 The bridge keeps a log of the map changes and replays it to each page that opens.
 All pages show the same map. The log lives in memory: a new bridge starts with an empty map.
+Node code can call the same commands: `import { run } from "map-pane"`. Claude Code code mode chains them in one REPL script through `$`.
+Both: [docs/code-mode.md](docs/code-mode.md).
 Details: [docs/architecture.md](docs/architecture.md). JavaScript in the map: [docs/run-js.md](docs/run-js.md).
 
 ## Environment variables
