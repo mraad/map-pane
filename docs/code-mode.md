@@ -198,7 +198,13 @@ The token is never printed, and the helper never sees it.
 
 ## 6. Worked example: four cities and a geodesic route
 
-One REPL script adds four labeled markers (Florence blue, the others red) and a great-circle line through them. The SDK draws a GeoJSON line straight in Web Mercator, so the script computes the great-circle points itself (spherical interpolation, 64 points a leg) and sends them as one LineString.
+The request, in plain words:
+
+> Create markers in Tokyo, Dubai, Florence, and San Francisco, and create a geodesic line between them. Color-code the one in Dubai red and all the others blue.
+
+![A world map with a red marker on Dubai, blue markers on Tokyo, Florence and San Francisco, and a dark curved line through the four cities.](img/cities-route.jpg)
+
+One REPL script adds four labeled markers (Dubai red, the others blue) and a great-circle line through them. The SDK draws a GeoJSON line straight in Web Mercator, so the script computes the great-circle points itself (spherical interpolation, 64 points a leg) and sends them as one LineString.
 
 ```js
 const cities = [["Tokyo", 35.6762, 139.6503], ["Dubai", 25.2048, 55.2708],
@@ -221,22 +227,22 @@ const dir = "/path/to/scratchpad"
 await write(`${dir}/route.geojson`, JSON.stringify({ type: "Feature", properties: { route: "Tokyo - Dubai - Florence - San Francisco" },
   geometry: { type: "LineString", coordinates: line } }))
 await write(`${dir}/cities.geojson`, JSON.stringify({ type: "FeatureCollection", features: cities.map(([name, lat, lon]) => ({
-  type: "Feature", properties: { name, color: name === "Florence" ? "blue" : "red" }, geometry: { type: "Point", coordinates: [lon, lat] } })) }))
+  type: "Feature", properties: { name, color: name === "Dubai" ? "red" : "blue" }, geometry: { type: "Point", coordinates: [lon, lat] } })) }))
 
 const marker = (color) => ({ type: "simple-marker", color, size: 12, outline: { color: "white", width: 1.5 } })
 await map("graphics", `${dir}/route.geojson`, "--title", "Geodesic route",
   "--renderer", JSON.stringify({ type: "simple", symbol: { type: "simple-line", color: "#333333", width: 2 } }))
 const { layers: [pts] } = await map("graphics", `${dir}/cities.geojson`, "--title", "Cities",
   "--renderer", JSON.stringify({ type: "unique-value", field: "color", uniqueValueInfos: [
-    { value: "red", label: "Tokyo, Dubai, San Francisco", symbol: marker("#d62728") },
-    { value: "blue", label: "Florence", symbol: marker("#1f5bd6") }] }),
+    { value: "red", label: "Dubai", symbol: marker("#d62728") },
+    { value: "blue", label: "Tokyo, Florence, San Francisco", symbol: marker("#1f5bd6") }] }),
   "--labels", JSON.stringify({ labelExpressionInfo: { expression: "$feature.name" }, labelPlacement: "above-center",
     symbol: { type: "text", color: "black", haloColor: "white", haloSize: 1.5, font: { size: 12, weight: "bold" } } }))
 await map("zoom")
 pts   // { id: "L3", title: "Cities", type: "feature", graphics: 4 }
 ```
 
-The route layer goes first, so the markers draw on top of it. Six map commands, one REPL call.
+The route layer goes first, so the markers draw on top of it. Three map commands, one REPL call.
 
 ## 7. Node library reference
 
