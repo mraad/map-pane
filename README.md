@@ -24,7 +24,7 @@ The legend shows at the bottom right while the map has layers. It hides when the
 
 ## Requirements
 
-- macOS, Node.js 24 or later, and Google Chrome. No npm packages.
+- macOS or Windows, Node.js 24 or later, and Google Chrome (Edge works on Windows). No npm packages. Windows runs the browser map only: see [docs/windows.md](docs/windows.md).
 - Network access to `js.arcgis.com` and to the basemap tile servers.
 - Ghostty split: Ghostty 1.4 or later.
 
