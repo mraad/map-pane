@@ -111,14 +111,12 @@ async function close() {
   if (!existsSync(BROWSER_STATE)) throw new Error("map-pane: no map was opened with --browser");
   const { pid, url, log, socket } = readState();
   // Only our bridge answers on our pipe, so a reused pid can never be stopped by mistake.
-  if (socket) {
-    await stopBridge(socket);
-    // Wait for it to go: its pipe stops answering.
-    const answers = () => request(socket, "/api/info").then(() => true, () => false);
-    for (let i = 0; await answers(); i++) {
-      if (i === 50) throw new Error(`map-pane: the bridge at ${url} did not stop; stop process ${pid} yourself`);
-      await sleep(100);
-    }
+  if (socket) await stopBridge(socket);
+  // Wait for it to go. Ask its TCP port: a bridge can run without its socket, and another bridge can reuse the port.
+  const runs = () => fetch(`${url}api/info`).then((r) => r.json()).then((info) => info.pid === Number(pid), () => false);
+  for (let i = 0; await runs(); i++) {
+    if (i === 50) throw new Error(`map-pane: the bridge at ${url} did not stop; stop process ${pid} yourself`);
+    await sleep(100);
   }
   rmSync(BROWSER_STATE, { force: true });
   rmSync(log, { force: true });

@@ -43,5 +43,16 @@ test("--browser starts a detached bridge once, opens its page, and --close stops
   assert.equal(JSON.parse((await launch("--close")).stdout).closed, first.url);
   await assert.rejects(request(socket, "/api/info"));
   assert.ok(!existsSync(state));
+
+  // A bridge that lost its socket cannot be asked to stop: --close says so and keeps the record.
+  await launch("--browser");
+  const lost = JSON.parse(readFileSync(state, "utf8"));
+  rmSync(lost.socket);
+  await assert.rejects(launch("--close"), (e) => e.code === 1 && e.stderr.includes(`did not stop; stop process ${lost.pid}`));
+  assert.ok(existsSync(state));
+  // Once it is gone, --close clears the record.
+  process.kill(lost.pid);
+  assert.equal(JSON.parse((await launch("--close")).stdout).closed, lost.url);
+  assert.ok(!existsSync(state));
   await assert.rejects(launch("--close"), (e) => e.code === 1 && /no map was opened with --browser/.test(e.stderr));
 });
