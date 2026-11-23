@@ -1,6 +1,6 @@
 {
   "name": "map-pane",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "A live web map in a terminal pane or browser, driven by Claude Code, Codex, Pi and the shell (skill and CLI)",
   "type": "module",
   "private": true,
