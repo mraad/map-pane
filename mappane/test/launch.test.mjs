@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
+import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { request } from "../cli/command.mjs";
 import { chromePath, gpuFlags, IS_WINDOWS, keychainFlags, openerFor, ownerId, windowsPipe } from "../cli/platform.mjs";
@@ -74,6 +77,31 @@ test("launch.mjs --browser starts one detached bridge, reuses it, and --close st
   await assert.rejects(launch("--close"), (e) => e.code === 1 && /no map was opened with --browser/.test(e.stderr));
 });
 
+test("parallel --browser calls start one bridge, and --close leaves none", { timeout: 60000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "map-launch-test-"));
+  const env = { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp, MAP_PANE_SOCKET: "", MAP_PANE_OPEN: "0" };
+  const infoOf = (url) => fetch(`${url}api/info`).then((r) => r.json());
+  let urls = [];
+  t.after(async () => {
+    for (const url of urls) await infoOf(url).then(({ pid }) => process.kill(pid)).catch(() => {});
+    rmSync(tmp, { recursive: true, force: true });
+  });
+  const opened = await Promise.all(Array.from({ length: 4 }, () => run(process.execPath, [LAUNCH, "--browser"], { env })));
+  urls = [...new Set(opened.map(({ stdout }) => JSON.parse(stdout).url))];
+  assert.equal(urls.length, 1, "one bridge");
+  for (const { stderr } of opened) assert.equal(stderr, "");
+  // --close waits while another launcher holds the lock.
+  const lock = new DatabaseSync(join(tmp, `map-pane-${ownerId()}`, "launch.lock"));
+  lock.exec("BEGIN EXCLUSIVE");
+  const closing = run(process.execPath, [LAUNCH, "--close"], { env });
+  await sleep(1000);
+  const waited = await infoOf(urls[0]).catch(() => null);
+  lock.close();
+  await closing;
+  assert.ok(waited, "the bridge ran until the lock was free");
+  await assert.rejects(infoOf(urls[0]));
+});
+
 test("the bridge refuses /shutdown and hides its socket over TCP", { timeout: 30000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "map-launch-test-"));
   const env = { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp, MAP_PANE_SOCKET: "", MAP_PANE_OPEN: "0" };
@@ -90,14 +118,20 @@ test("the bridge refuses /shutdown and hides its socket over TCP", { timeout: 30
   assert.ok(JSON.parse((await run(process.execPath, [COMMAND, "--info"], { env })).stdout).socket, "socket callers do");
 });
 
-test("--browser fails and leaves no bridge when the bridge has no command socket", { timeout: 60000, skip: IS_WINDOWS && "Windows has no folder modes" }, async (t) => {
+test("--browser fails and leaves no bridge when the bridge has no command socket", { timeout: 60000 }, async (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "map-launch-test-"));
   t.after(() => rmSync(tmp, { recursive: true, force: true }));
   const env = { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp, MAP_PANE_SOCKET: "", MAP_PANE_OPEN: "0" };
-  // A folder that others can open: the bridge refuses to put its socket there.
-  const dir = join(tmp, `map-pane-${ownerId()}`);
-  mkdirSync(dir);
-  chmodSync(dir, 0o755);
+  // Preloaded into the bridge: listening on a socket or pipe fails; the TCP port works.
+  const preload = join(tmp, "no-socket.mjs");
+  writeFileSync(preload, `import net from "node:net";
+const listen = net.Server.prototype.listen;
+net.Server.prototype.listen = function (...args) {
+  if (typeof args[0] !== "string") return listen.apply(this, args);
+  process.nextTick(() => this.emit("error", new Error("no sockets here")));
+  return this;
+};`);
+  env.NODE_OPTIONS = `--import=${pathToFileURL(preload)}`;
   const error = await run(process.execPath, [LAUNCH, "--browser"], { env }).then(() => assert.fail("--browser succeeded"), (e) => e);
   assert.match(error.stderr, /the bridge has no command socket/);
   const url = /^bridge: (\S+)/m.exec(error.stderr)[1];

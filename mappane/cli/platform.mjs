@@ -53,13 +53,15 @@ export function openerFor(url, platform = process.platform) {
   return ["xdg-open", [url]];
 }
 
-/** Open url in the default browser. Resolves true if the opener started, false if it could not. */
+/** Open url in the default browser. Resolves true if the opener started (macOS: succeeded), false if it could not. */
 export function openUrl(url, platform = process.platform) {
   const [program, args] = openerFor(url, platform);
   return new Promise((done) => {
     // detached: Windows kills a non-detached child when its parent exits, and the launcher exits at once.
     const child = spawn(program, args, { stdio: "ignore", windowsHide: true, detached: true });
     child.on("error", () => done(false));
+    // macOS: `open` ends at once, and its exit code tells that a sandbox blocked it.
+    if (platform === "darwin") return child.on("exit", (code) => done(code === 0));
     child.on("spawn", () => {
       child.unref();
       done(true);
