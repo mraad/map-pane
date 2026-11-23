@@ -10,14 +10,15 @@
 // The log lives in memory: a new bridge starts with an empty map.
 import { createServer } from 'node:http'
 import { chmodSync, createReadStream, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { createHash, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { pipeline } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import { startView } from './commands.js'
-import { commandSocket, socketDir } from '../cli/command.mjs'
+import { commandSocket, registerPipe, socketDir, unregisterPipe } from '../cli/command.mjs'
+import { IS_WINDOWS } from '../cli/platform.mjs'
 
 // 0 lets the OS choose a free port.
 const PORT = Number(process.argv[2] ?? process.env.PORT ?? 0)
@@ -132,7 +133,8 @@ let HOST = `127.0.0.1:${PORT}`
 // Set, it is required on the TCP control endpoints (/cmd, /clear). The Unix socket needs none:
 // only its owner can connect (mode 0600).
 const TOKEN = process.env.MAP_PANE_TOKEN
-const SOCKET = commandSocket(process.pid)
+// Windows: a random name that nobody can create first. The pipe's default access list is what keeps other users from writing.
+const SOCKET = commandSocket(process.pid, IS_WINDOWS ? randomBytes(12).toString('hex') : undefined)
 // Advertised (SOCKET line, /api/info) only once the socket listens: the CLI has no other way in.
 let socketReady = false
 const CONTROL = new Set(['/cmd', '/clear'])
@@ -192,8 +194,8 @@ const handler = async (req, res) => {
       return res.end(PAGE[file])
     }
     if (req.method === 'GET' && req.url === '/api/start') return json(res, 200, START)
-    // bin/map-pane asks a running bridge where its page is.
-    if (req.method === 'GET' && req.url === '/api/info') return json(res, 200, { url: `http://${HOST}/`, pid: process.pid, socket: socketReady ? SOCKET : null })
+    // bin/map-pane asks a running bridge where its page is. TCP callers do not learn the socket.
+    if (req.method === 'GET' && req.url === '/api/info') return json(res, 200, { url: `http://${HOST}/`, pid: process.pid, socket: isSocket && socketReady ? SOCKET : null })
     if (req.method === 'GET' && req.url === '/events') {
       res.writeHead(200, {
         'content-type': 'text/event-stream',
@@ -265,6 +267,12 @@ const handler = async (req, res) => {
       const ack = await body(req)
       if (ack.state && ack.id > clearedThrough) state = ack.state
       pending.get(ack.id)?.(ack)
+      return json(res, 200, { ok: true })
+    }
+    // Stops the bridge: Windows has no SIGTERM to send, and a pid kill would skip the cleanup. Socket or pipe only.
+    if (req.method === 'POST' && req.url === '/shutdown') {
+      if (!isSocket) return json(res, 403, { ok: false, error: 'shutdown needs the command socket' })
+      res.on('finish', shutdown)
       return json(res, 200, { ok: true })
     }
     if (req.method === 'POST' && req.url === '/clear') {
@@ -378,6 +386,16 @@ function listenSocket() {
   } catch (err) {
     return console.error(`command socket: ${err.message}`)
   }
+  if (IS_WINDOWS) {
+    // A named pipe is not a file: no mode, nothing to remove. The registry file tells the CLI its name.
+    commands.listen(SOCKET, () => {
+      registerPipe(process.pid, SOCKET)
+      socketReady = true
+      console.log(`SOCKET ${SOCKET}`)
+    })
+    process.on('exit', () => unregisterPipe(process.pid))
+    return
+  }
   rmSync(SOCKET, { force: true }) // left by a killed bridge with the same pid
   commands.listen(SOCKET, () => {
     chmodSync(SOCKET, 0o600)
@@ -398,11 +416,10 @@ if (START) server.listen(PORT, '127.0.0.1', () => {
   console.log(`bridge: http://${HOST}/`)
   listenSocket()
 })
-for (const signal of ['SIGTERM', 'SIGINT']) {
-  process.on(signal, () => {
-    rmSync(DATA, { recursive: true, force: true })
-    process.exit(0)
-  })
+function shutdown() {
+  rmSync(DATA, { recursive: true, force: true })
+  process.exit(0)
 }
+for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, shutdown)
 // Keep SSE connections alive through proxies and idle timeouts.
 setInterval(() => tabs.forEach(tab => tab.write(': ping\n\n')), 20000)

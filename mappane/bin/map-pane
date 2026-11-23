@@ -6,6 +6,8 @@
 #   bin/map-pane --close   stop the bridge that --browser started and close its Chrome tabs
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# Windows (Git Bash, MSYS, Cygwin): perl, ps and osascript are missing or differ; the Node launcher does the same job.
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) exec node "$DIR/cli/launch.mjs" "$@" ;; esac
 # Bridge started by --browser: line 1 pid, line 2 page URL, line 3 log file.
 BROWSER_STATE="${TMPDIR:-/tmp}/map-pane-browser-$(id -u)"
 

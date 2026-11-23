@@ -11,6 +11,7 @@ Run them from the user's working folder: relative file arguments (`./f.geojson`,
 Successful commands print JSON and exit 0; errors exit 1. `scripts/map-command --help` prints the syntax.
 Requirements: shell access as the same user and on the same machine as the map bridge, and Node.js 24+.
 Opening a split also needs macOS, Ghostty and Chrome.
+On Windows only the browser map works (`--browser`); there is no split.
 
 ## Agent setup
 
@@ -21,6 +22,15 @@ Opening a split also needs macOS, Ghostty and Chrome.
   The same setting lets `login` listen on its loopback redirect and reach the portal.
   The sandbox also blocks opening a browser: `--browser` then prints `could not open a browser` and the URL.
   The map still runs; give the URL to the user.
+
+## Windows
+
+- In Git Bash the `scripts/map-command` and `scripts/map-pane` commands below work as written.
+- In PowerShell or cmd, use the `.cmd` twins: `scripts\map-command.cmd extent`, `scripts\map-pane.cmd --browser`
+  (call them by the folder's absolute path), or `node <repo>/mappane/cli/command.mjs extent` and `node <repo>/mappane/cli/launch.mjs --browser`.
+- Open the map with `--browser`, never `--split`. `--close` stops the bridge; the browser tab stays open.
+- The CLI finds the map through a named pipe listed in `%TEMP%\map-pane-<user>\`; `MAP_PANE_SOCKET` takes a pipe name (`\\.\pipe\map-pane-...`, printed as `SOCKET` by the bridge).
+- Heredocs (`<<'EOF'`) are bash only. In PowerShell pass JSON or code from a file, or on stdin: `Get-Content f.js | scripts\map-command.cmd js - --read-only`.
 
 ## Open and select the map
 
@@ -193,7 +203,7 @@ Full guide (helper, recipes, worked example, API reference): `../../../docs/code
 - Client ID (required): `--client-id`, else `MAP_PANE_CLIENT_ID`.
 - Redirect: `--redirect-uri`, else `MAP_PANE_REDIRECT_URI`, else `http://127.0.0.1:8766/`. It must be registered on the client ID.
   It must be `http://127.0.0.1:<port>/<path>` or `http://localhost:<port>/<path>` with an explicit port; HTTPS is rejected.
-- `login` prints the sign-in URL on stderr, opens the browser on macOS and waits up to 5 minutes.
+- `login` prints the sign-in URL on stderr, opens the browser on macOS and Windows and waits up to 5 minutes.
   Use a shell timeout of at least 300 seconds, or run it in the background. Give the URL to the user.
   Do not start a second `login` while one waits.
 - `login --arcctl` uses the session of `arcctl login` (no browser, no wait): it reads arcctl's `config.json`

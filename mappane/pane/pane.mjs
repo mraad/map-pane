@@ -6,13 +6,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { kittyFrame, parseInput, toCdp } from "./lib.mjs";
+import { chromePath, gpuFlags, keychainFlags } from "../cli/platform.mjs";
 
-const CHROME = process.env.CHROME ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const CHROME = chromePath();
 const SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"];
-// Metal GPU: 2.6x faster first draw than SwiftShader in the 2026-11-09 benchmark. The rest are puppeteer's quiet defaults.
+// Metal GPU (macOS only): 2.6x faster first draw than SwiftShader in the 2026-11-09 benchmark. The rest are puppeteer's quiet defaults.
 const CHROME_FLAGS = [
-  "--use-angle=metal",
-  "--enable-gpu",
+  ...gpuFlags(),
   "--no-first-run",
   "--no-default-browser-check",
   "--disable-background-networking",
@@ -26,7 +26,7 @@ const CHROME_FLAGS = [
   "--metrics-recording-only",
   "--mute-audio",
   "--password-store=basic",
-  "--use-mock-keychain",
+  ...keychainFlags(),
 ];
 
 // Start headless Chrome on a throwaway profile and open url. Returns a small CDP client.

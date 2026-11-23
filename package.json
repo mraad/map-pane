@@ -1,6 +1,6 @@
 {
   "name": "map-pane",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "A live web map in a terminal pane or browser, driven by Claude Code, Codex, Pi and the shell (skill and CLI)",
   "type": "module",
   "private": true,
@@ -10,7 +10,9 @@
   "pi": { "skills": ["./.agents/skills"] },
   "scripts": {
     "split": "mappane/bin/map-pane --split",
+    "browser": "node mappane/cli/launch.mjs --browser",
+    "close": "node mappane/cli/launch.mjs --close",
     "serve": "node mappane/web/server.mjs 0",
-    "test": "node --test --test-timeout=120000 --test-concurrency=1 mappane/web/ mappane/test/"
+    "test": "node --test --test-timeout=120000 --test-concurrency=1 \"mappane/web/*.test.mjs\" \"mappane/test/*.test.mjs\""
   }
 }
