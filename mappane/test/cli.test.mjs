@@ -2,13 +2,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import http from "node:http";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { after, before, test } from "node:test";
-import { arcctlSession, request, toOp } from "../cli/command.mjs";
+import { Readable } from "node:stream";
+import { arcctlSession, connect, run, request, toOp } from "../cli/command.mjs";
 import { BASEMAPS } from "../web/commands.js";
 
 const ROOT = join(import.meta.dirname, "..");
@@ -119,6 +120,27 @@ test("the bridge serves the start view from MAP_PANE_* variables and refuses bad
   assert.doesNotMatch(bad.out, /^bridge:/m);
 });
 
+test("run() and connect() are the CLI as calls: same ops, results returned, errors thrown", { timeout: 10_000 }, async (t) => {
+  const map = await page(t);
+  const calls = [
+    [() => run(["go_to", "coordinate", 30.2672, -97.7431, 12], { socket }), { op: "go_to", args: { center: [-97.7431, 30.2672], zoom: 12 } }],
+    [() => run(["js", "-", "--read-only"], { socket, stdin: Readable.from(["return 3"]) }), { op: "run_js", args: { code: "return 3", readOnly: true } }],
+    [() => connect({ socket }).command({ op: "extent", args: {} }), { op: "extent", args: {} }],
+  ];
+  for (const [call, expected] of calls) {
+    const pending = call();
+    const message = await map.next();
+    assert.deepEqual({ op: message.op, args: message.args }, expected);
+    await map.reply(message, { echo: message.op });
+    assert.deepEqual(await pending, { echo: message.op });
+  }
+  assert.equal((await connect({ socket }).info()).socket, socket);
+  const failed = assert.rejects(run(["basemap", "osm"], { socket }), /basemap failed/); // handler attached before the reply
+  await map.reply(await map.next(), undefined, "basemap failed");
+  await failed;
+  await assert.rejects(run(["extent"], { socket: join(tmp, "missing.sock") }), { code: "ENOENT", noMap: true });
+});
+
 test("CLI verbs become bridge ops; results and page errors come back", { timeout: 10_000 }, async (t) => {
   const map = await page(t);
   const data = { type: "Point", coordinates: [-77, 39] };
@@ -173,6 +195,25 @@ test("CLI screenshot copies the PNG the bridge saved to the file asked for", { t
   assert.equal(await run.exited, 0, run.err());
   assert.deepEqual(JSON.parse(run.out()), { file, width: 2, height: 1 });
   assert.equal(readFileSync(file, "utf8"), "PNG");
+  const data = readdirSync(tmp).filter((name) => name.startsWith("map-pane-data-"));
+  assert.deepEqual(data.flatMap((dir) => readdirSync(join(tmp, dir))).filter((name) => name.endsWith(".png")), [], "the bridge's copy is removed");
+});
+
+test("the CLI skips a stale socket that a killed bridge left behind", { timeout: 10_000 }, async (t) => {
+  const map = await page(t);
+  // A newer socket file that refuses connections: its process was killed before it could remove it.
+  const stale = join(tmp, `map-pane-${process.getuid()}`, "command-999999.sock");
+  const holder = spawn(process.execPath, ["-e", `require("net").createServer().listen(${JSON.stringify(stale)}, () => console.log("up"))`]);
+  await once(holder.stdout, "data");
+  holder.kill("SIGKILL");
+  await once(holder, "exit");
+  t.after(() => rmSync(stale, { force: true }));
+  assert.ok(statSync(stale).isSocket() && statSync(stale).mtimeMs >= statSync(socket).mtimeMs);
+  const run = cli(["extent"]);
+  const message = await map.next();
+  await map.reply(message, { xmin: 0 });
+  assert.equal(await run.exited, 0, run.err());
+  assert.deepEqual(JSON.parse(run.out()), { xmin: 0 });
 });
 
 test("a GeoPackage URL reaches the page as decoded graphics layers and is logged for replay", { timeout: 10_000 }, async (t) => {
@@ -228,9 +269,16 @@ test("CLI login runs PKCE against the portal, hands the token to the page, never
   const redirect = `http://127.0.0.1:${free.address().port}/callback`;
   await new Promise((ok) => free.close(ok));
 
-  const run = cli(["login", "--client-id", "cid"], { env: {
-    MAP_PANE_PORTAL_URL: `http://127.0.0.1:${portal.address().port}/`, MAP_PANE_REDIRECT_URI: redirect,
-  } });
+  const env = { MAP_PANE_PORTAL_URL: `http://127.0.0.1:${portal.address().port}/`, MAP_PANE_REDIRECT_URI: redirect };
+  // A callback without the state the CLI sent (a forged sign-in) is refused before any token request.
+  const forged = cli(["login", "--client-id", "cid"], { env });
+  await map.reply(await map.next(), {});
+  while (!/oauth2\/authorize/.test(forged.err())) await new Promise((ok) => setTimeout(ok, 20));
+  assert.equal((await fetch(`${redirect}?code=the-code&state=wrong`)).status, 200);
+  assert.equal(await forged.exited, 1);
+  assert.match(forged.err(), /Sign-in failed: invalid state or missing code/);
+
+  const run = cli(["login", "--client-id", "cid"], { env });
   const probe = await map.next();
   assert.equal(probe.op, "extent", "login checks the map before the sign-in");
   await map.reply(probe, {});

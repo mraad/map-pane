@@ -135,6 +135,11 @@ test('a local path is refused when it is no file, and served under a random URL 
   assert.equal(tail.status, 206)
   assert.equal(tail.text, '789')
   assert.equal(tail.headers['content-range'], 'bytes 7-9/10')
+  const headRange = await call('HEAD', url, { headers: { range: 'bytes=-3' } })
+  assert.equal(headRange.status, 206)
+  assert.equal(headRange.headers['content-range'], tail.headers['content-range'])
+  assert.equal(headRange.headers['content-length'], '3')
+  assert.equal(headRange.text, '')
   assert.equal((await call('GET', url, { headers: { range: 'bytes=2-4' } })).text, '234')
   assert.equal((await call('GET', url, { headers: { range: 'bytes=20-' } })).status, 416)
   tab.close()
@@ -458,15 +463,47 @@ test('a page that opens after a login gets the login first, then the log', async
   assert.equal(again.messages.find(m => m.op === 'login')?.args.token, 'T3', 'a reconnecting page gets the login it missed')
 })
 
-test('a screenshot is written to a PNG file; its path answers, not the picture', async () => {
+test('a slow older login cannot replace a newer successful login in replay', async t => {
+  const own = await startBridge(OTHER_PORT)
+  t.after(() => stopBridge(own))
+  const openPage = (options = {}) => {
+    const tab = page({ port: OTHER_PORT, ...options })
+    t.after(() => tab.close())
+    return tab
+  }
+  const first = openPage({ answer: () => null })
+  await first.until(() => first.messages.length)
+  const older = cmd('login', { token: 'older' }, OTHER_PORT)
+  await first.until(() => first.messages.some(m => m.op === 'login'))
+  const { id, tab } = first.messages.at(-1)
+
+  const second = openPage()
+  await second.until(() => second.messages.length)
+  assert.equal((await cmd('login', { token: 'newer' }, OTHER_PORT)).status, 200)
+  await call('POST', '/ack', { port: OTHER_PORT, body: { id, tab, ok: true } })
+  assert.equal((await older).status, 200)
+
+  const later = openPage()
+  await later.until(() => later.messages.some(m => m.op === 'login'))
+  assert.equal(later.messages.find(m => m.op === 'login')?.args.token, 'newer')
+})
+
+test('overlapping screenshots are written to distinct PNG files', async t => {
   const png = Buffer.from('89504e470d0a1a0a', 'hex')
-  const tab = page({ answer: () => ({ ok: true, result: { dataUrl: `data:image/png;base64,${png.toString('base64')}`, width: 8, height: 4 } }) })
+  const tab = page({ answer: ({ args: { width } }) => ({
+    ok: true,
+    result: { dataUrl: `data:image/png;base64,${Buffer.concat([png, Buffer.of(width)]).toString('base64')}`, width, height: 4 },
+  }) })
+  t.after(() => tab.close())
   await tab.until(() => tab.messages.length)
-  const { result } = await cmd('screenshot')
-  assert.match(result.path, /\.png$/)
-  assert.deepEqual(readFileSync(result.path), png)
-  assert.equal(result.width, 8)
-  tab.close()
+  const widths = [8, 9, 10, 11, 12, 13, 14, 15]
+  const replies = await Promise.all(widths.map(width => cmd('screenshot', { width })))
+  assert.equal(new Set(replies.map(({ result }) => result.path)).size, widths.length)
+  for (const [i, { result }] of replies.entries()) {
+    assert.match(result.path, /\.png$/)
+    assert.equal(result.width, widths[i])
+    assert.deepEqual(readFileSync(result.path), Buffer.concat([png, Buffer.of(widths[i])]))
+  }
 })
 
 test('/clear empties the map: open pages reset, and a page that reconnects with an old id starts over too', async () => {
@@ -499,6 +536,21 @@ test('/clear empties the map: open pages reset, and a page that reconnects with 
   assert.deepEqual(back.messages.filter(m => m.op !== 'go_to').map(m => m.op), ['reset'], 'nothing from before the clear')
   watching.close()
   back.close()
+})
+
+test('a command acknowledged after clear still answers without restoring the old layers', async t => {
+  const open = page({ answer: () => null })
+  t.after(() => open.close())
+  await open.until(() => open.messages.length)
+  const adding = cmd('add_graphic', { geometry: { type: 'Point', coordinates: [7, 8] } })
+  await open.until(() => open.messages.some(m => m.op === 'add_graphic'))
+  const { id, tab, layerId } = open.messages.at(-1)
+  assert.equal((await call('POST', '/clear')).status, 200)
+  await call('POST', '/ack', { body: { id, tab, ok: true, state: { layers: [{ id: layerId }] } } })
+  const reply = await adding
+  assert.equal(reply.status, 200)
+  assert.deepEqual(reply.state.layers, [])
+  assert.deepEqual(JSON.parse((await call('GET', '/state')).text).layers, [])
 })
 
 test('a bridge that cannot get its port says so and exits', { timeout: 15000 }, async () => {

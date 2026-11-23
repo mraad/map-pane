@@ -13,6 +13,7 @@ import { chmodSync, createReadStream, mkdtempSync, readFileSync, rmSync, statSyn
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
+import { pipeline } from 'node:stream'
 import { text } from 'node:stream/consumers'
 
 import { startView } from './commands.js'
@@ -54,6 +55,7 @@ const DATA = mkdtempSync(join(tmpdir(), 'map-pane-data-'))
 let epoch = randomUUID().slice(0, 8)
 let log = []
 let nextId = 1
+let clearedThrough = 0
 
 const tabs = new Set()
 // Each page's id: a command carries it to that page, and the page's /ack sends it back.
@@ -200,16 +202,25 @@ const handler = async (req, res) => {
       })
       res.write(`: connected\n\nevent: version\ndata: ${PAGE_VERSION}\n\n`)
       // A page that reconnects to this log gets only what it missed; any other page starts over.
-      const [lastEpoch, lastN, lastLoginId] = String(req.headers['last-event-id'] ?? '').split(':')
-      const isKnown = lastEpoch === epoch && Number(lastN) < nextId
+      const [lastEpoch, cursor, lastLoginId] = String(req.headers['last-event-id'] ?? '').split(':')
+      const lastN = Number(cursor)
+      const isKnown = lastEpoch === epoch && Number.isSafeInteger(lastN) && lastN >= 0 && lastN < nextId
       if (!isKnown) sse(res, { op: 'reset' }, false)
       // Before the log: a logged basemap style or portal layer needs the token to replay.
       if (lastLogin && (!isKnown || !(Number(lastLoginId) >= lastLogin.id))) {
         loginIds.set(res, lastLogin.id)
         sse(res, { op: 'login', args: lastLogin.args, replay: true }, false)
       }
-      for (const entry of log) {
-        if (isKnown && entry.id <= Number(lastN)) continue
+      // Ids increase in delivery order, with gaps for read-only and failed commands.
+      let start = 0
+      let end = isKnown ? log.length : 0
+      while (start < end) {
+        const mid = Math.floor((start + end) / 2)
+        if (log[mid].id <= lastN) start = mid + 1
+        else end = mid
+      }
+      for (let i = start; i < log.length; i++) {
+        const entry = log[i]
         // A pending run_js may be freezing its page: a new page must not run it too.
         // shortcut: if it then succeeds, this page misses it until a reload.
         if (entry.op === 'run_js' && pending.has(entry.id)) continue
@@ -231,16 +242,19 @@ const handler = async (req, res) => {
       if (!path) return json(res, 404, { ok: false, error: 'not found' })
       const size = statSync(path).size
       const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
+      let range
       if (m && (m[1] || m[2])) {
         const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]))
         const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1
         if (start > end) return res.writeHead(416, { 'content-range': `bytes */${size}` }).end()
         res.writeHead(206, { 'content-range': `bytes ${start}-${end}/${size}`, 'content-length': end - start + 1, 'accept-ranges': 'bytes' })
-        return createReadStream(path, { start, end }).on('error', () => res.destroy()).pipe(res)
+        range = { start, end }
+      } else {
+        res.writeHead(200, { 'content-length': size, 'accept-ranges': 'bytes' })
       }
-      res.writeHead(200, { 'content-length': size, 'accept-ranges': 'bytes' })
       if (req.method === 'HEAD') return res.end()
-      return createReadStream(path).on('error', () => res.destroy()).pipe(res)
+      // pipeline closes the file if the page cancels its request.
+      return pipeline(createReadStream(path, range), res, () => {})
     }
     if (req.method === 'GET' && req.url === '/state') return json(res, 200, snapshot())
     if (req.method === 'POST' && req.url === '/state') {
@@ -249,7 +263,7 @@ const handler = async (req, res) => {
     }
     if (req.method === 'POST' && req.url === '/ack') {
       const ack = await body(req)
-      if (ack.state) state = ack.state
+      if (ack.state && ack.id > clearedThrough) state = ack.state
       pending.get(ack.id)?.(ack)
       return json(res, 200, { ok: true })
     }
@@ -257,6 +271,7 @@ const handler = async (req, res) => {
       // Inline GeoJSON files belong to the cleared layers; screenshots in the same folder stay.
       for (const entry of log) forget(entry.args.path)
       log = []
+      clearedThrough = nextId - 1
       epoch = randomUUID().slice(0, 8)
       state = { ...state, layers: [] }
       // Sent as a replay: the page posts its state once the reset has run.
@@ -337,10 +352,10 @@ const handler = async (req, res) => {
         forget(entry.args.path)
       }
       // Kept in memory only (never in the log or on disk), so a page that opens later is signed in too.
-      if (ack.ok && entry.op === 'login') lastLogin = entry
+      if (ack.ok && entry.op === 'login' && (!lastLogin || entry.id > lastLogin.id)) lastLogin = entry
       let { result } = ack
       if (ack.ok && cmd.op === 'screenshot' && typeof result?.dataUrl === 'string') {
-        const path = join(DATA, `map-${new Date().toISOString().replace(/[:.]/g, '-')}.png`)
+        const path = join(DATA, `map-${randomUUID()}.png`)
         writeFileSync(path, Buffer.from(result.dataUrl.split(',')[1] ?? '', 'base64'))
         result = { path, width: result.width, height: result.height }
       }

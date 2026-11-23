@@ -154,6 +154,24 @@ mappane/bin/map-command js --read-only '
 
 All the rules and seven tested examples: [run-js.md](run-js.md).
 
+### Use as a library
+
+`mappane/cli/command.mjs` exports the CLI as calls (package export `map-pane`). The CLI only prints what `run` returns.
+
+```js
+import { connect, run } from "map-pane"
+await run(["go_to", "location", "Austin, Texas"])          // the JSON map-command prints; errors throw
+await run(["graphics", "-", "--title", "Points"], { stdin: process.stdin })
+const map = connect()                                      // newest map; connect({ socket }) for another
+await map.command({ op: "extent", args: {} })              // one bridge op
+```
+
+- `run(argv, { stdin, socket })` takes the same words as `map-command`. Relative paths resolve from the current folder.
+- `connect({ socket })` gives `command({ op, args })`, `info()` and `clear()`.
+- In the Claude Code code-mode REPL there is no `import`: call `map-command` through `$`.
+
+Full guide, with the code-mode helper, recipes, a worked example and the API reference: [code-mode.md](code-mode.md).
+
 ## 6. Basemaps
 
 `basemap list` asks the running map. The list depends on the sign-in:
@@ -261,6 +279,9 @@ Pi needs its provider credentials in its environment. Start it from a shell that
 Claude runs the CLI with its shell tool and asks before each new command.
 To stop the prompts, allow the CLI once in `/permissions`, for example `Bash(/path/to/map-pane/.agents/skills/map-pane/scripts/map-command:*)`.
 
+With code mode on, Claude writes JavaScript for its REPL tool and calls the CLI through `$`.
+One script then chains many map commands and checks each JSON result. Helper, recipes and a worked example: [code-mode.md](code-mode.md).
+
 ### Tested
 
 On 2026-11-17, each agent ran the same task on a live map: geocode Austin, Texas, add `examples/cities.geojson`, save a screenshot.
@@ -309,7 +330,7 @@ The start-view variables apply only to a bridge that the launcher starts. A bad 
 |---|---|
 | GeoJSON | WGS84 (RFC 7946). A `crs` member is an error. Polygon ring order is corrected. |
 | Failed layers | The page loads a layer before it adds it. A layer that fails does not change the map. |
-| GeoPackage | Each vector table is a layer. EPSG or WKT and Z are kept; M is dropped. Raster tiles, curves and undefined coordinate systems are refused. 64 MiB and 100,000 features at most. |
+| GeoPackage | Each vector table is a layer. EPSG or WKT and Z are kept; M is dropped. Raster tiles, curves and undefined coordinate systems are refused. URL downloads stream to a temporary file. 64 MiB and 100,000 features at most. |
 | Deadlines | 15 s for each command; 60 s to add data, `graphics` and `save-webmap`; 30 s for `zoom` and `screenshot`; 30 s for `js` code (60 s at most); 30 s each for a GeoPackage download and conversion. |
 | Services | A service must allow browser CORS access. |
 | Repeats | Commands that add data are not idempotent. Examine the map before you repeat a command that timed out. |

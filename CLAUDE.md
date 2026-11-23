@@ -6,6 +6,7 @@ Guidance for agents working in this repository.
 
 A live web map (ArcGIS Maps SDK for JavaScript 5.2.2, vanilla JS, no build step) driven by agents.
 `mappane/` is the runtime (`mappane/bin/map-pane` Kitty pane or browser, `mappane/bin/map-command` CLI, bridge `web/server.mjs`).
+The CLI is a printer over `run()`/`connect()` exported by `mappane/cli/command.mjs` (package export `map-pane`); keep CLI behavior in `run`.
 One skill, `.agents/skills/map-pane`, serves Claude Code, Codex and Pi. Claude Code finds it through the link
 `.claude/skills/map-pane` in a clone, or the skill-only plugin `.claude-plugin/plugin.json` (marketplace `.claude-plugin/marketplace.json`).
 Codex: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`. Pi: `package.json` `pi.skills`.
@@ -16,7 +17,7 @@ It replaces `mraad/claude-mod-map` and `mraad/ghostty-map-pane` (deprecated).
 Never put "arcgis" in a name we own (folders, plugin, tools, env vars, headers, paths, titles): it is a trademark.
 SDK identifiers (`@arcgis/core`, `<arcgis-*>`, `$arcgis`, CDN and service URLs) and plain mentions of the SDK are fine.
 
-Docs: `docs/guide.html` (STE100 HTML manual, images inline; rebuild it when behavior changes), `docs/standalone.md`, `docs/architecture.md` (protocol, ops, security), `docs/run-js.md` (`run_js` contract and examples). Update them when behavior changes.
+Docs: `docs/guide.html` (STE100 HTML manual, images inline; rebuild it when behavior changes), `docs/standalone.md`, `docs/architecture.md` (protocol, ops, security), `docs/run-js.md` (`run_js` contract and examples), `docs/code-mode.md` (Claude Code code mode through `$`, Node library `run`/`connect`). Update them when behavior changes.
 
 ## Commands
 
@@ -32,17 +33,9 @@ Suites: `mappane/web/server.test.mjs` (bridge over TCP, ports 18765/18766), `map
 `e2e.test.mjs` (Chrome + network), `lib`, `commands`, `geopackage`, `map-commands`, `server-url`, `manifests` (pure),
 `open-page`, `startup`, `pane`, `browser` (Chrome). Chrome suites are timing-sensitive: run them one at a time (`npm test` does).
 
-## Layout
-
-- `mappane/web/server.mjs`: the bridge. One handler for TCP and the Unix socket.
-- `mappane/web/index.html` + `app.js`: the page (layout, protocol loop, op table). `map-commands.js`
-  (`runMapCommand`: graphics, geocoding, zoom, extent, login, save-webmap), `commands.js` (CLI syntax, `BASEMAPS`,
-  `startView`), `geojson.js`. The bridge serves only the files in `PAGE_FILES`.
-- `mappane/cli/command.mjs` (`toOp`, `request`, `commandSocket`), `cli/geopackage.mjs`.
-- `mappane/pane/pane.mjs`, `pane/lib.mjs`: Kitty pane.
-
 ## Rules that are easy to break
 
+- The bridge serves only the files in `PAGE_FILES` (`server.mjs`); a new page file must be added there.
 - Bridge TCP: only `Host: 127.0.0.1:<bound port>`, no foreign `Origin`, no cross-site `Sec-Fetch-Site`; control endpoints need `x-map-pane-token`
   when `MAP_PANE_TOKEN` is set. The socket skips both (mode 0600). Keep all three.
 - `login` is never logged or saved (`READ_ONLY` in `server.mjs`); the last one lives in bridge memory (`lastLogin`) and is replayed first to each new page. A new op that changes the map must be logged;

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import http from "node:http";
-import { copyFile, readFile, readdir, stat } from "node:fs/promises";
+import { copyFile, readFile, readdir, rm, stat } from "node:fs/promises";
 import { existsSync, lstatSync, mkdirSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -29,7 +29,7 @@ export function request(socketPath, path, body) {
     const req = http.request({ socketPath, path, method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json" } }, (res) => {
       readText(res).then((text) => {
         const reply = JSON.parse(text);
-        if (res.statusCode !== 200 || reply.ok === false) throw new Error(reply.error ?? `HTTP ${res.statusCode}`);
+        if (res.statusCode !== 200 || reply.ok === false) throw Object.assign(new Error(reply.error ?? `HTTP ${res.statusCode}`), reply.noPage ? { noMap: true } : {});
         ok(reply);
       }).catch(fail);
     });
@@ -38,7 +38,6 @@ export function request(socketPath, path, body) {
     req.end(body === undefined ? undefined : JSON.stringify(body));
   });
 }
-export const sendCommand = async (socketPath, cmd) => (await request(socketPath, "/cmd", cmd)).result;
 
 // A parsed CLI command (parseCommand) as the bridge's {op, args}. clear is the bridge's own /clear.
 // Data commands keep the current extent (zoomTo false); run zoom afterwards.
@@ -184,12 +183,44 @@ export async function arcctlSession({ portalUrl } = {}) {
   return { portalUrl: portal, clientId: session.client_id, token, expires, userId: username, refreshToken: session.refresh_token };
 }
 
-async function main() {
-  const [name, ...args] = process.argv.slice(2);
-  if (!name || name === "--help") {
-    console.log(`Usage: bin/map-command <command>\n${HELP.replace("<GeoJSON>", "<file | - | inline JSON>").replaceAll("<JSON>", "<file | inline JSON>").replace("<code>", "<file.js | - | inline code>")}\n\nTargets the newest map. Set MAP_PANE_SOCKET to choose another map.\nbin/map-command --info prints the page URL of the map it targets.`);
-    return;
-  }
+// The map sockets of this user, newest first.
+async function findSockets() {
+  const dir = socketDir();
+  const entries = await readdir(dir);
+  const candidates = await Promise.all(entries.filter((name) => name.startsWith("command-") && name.endsWith(".sock")).map(async (name) => {
+    const path = join(dir, name);
+    const info = await stat(path).catch(() => null);
+    return info?.isSocket() ? { path, time: info.mtimeMs } : null;
+  }));
+  return candidates.filter(Boolean).sort((a, b) => b.time - a.time).map((c) => c.path);
+}
+
+/** A client of one map: the socket given, else MAP_PANE_SOCKET, else the newest running map (stale sockets skipped). */
+export function connect({ socket } = {}) {
+  const pinned = socket || process.env.MAP_PANE_SOCKET;
+  const send = async (path, body) => {
+    // Listed on every call: a map that restarted has a new socket.
+    for (const target of pinned ? [pinned] : await findSockets()) {
+      try {
+        return await request(target, path, body);
+      } catch (error) {
+        if (!["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
+        if (pinned) throw Object.assign(error, { noMap: true });
+      }
+    }
+    throw Object.assign(new Error("No running map found. Start bin/map-pane --split (or --browser) first."), { noMap: true });
+  };
+  return {
+    /** One bridge op, {op, args} as toOp builds it; resolves its result. */
+    command: async (op) => (await send("/cmd", op)).result,
+    info: () => send("/api/info"),
+    clear: async () => (await send("/clear", {})).state,
+  };
+}
+
+/** The CLI as a call: run(["go_to", "location", "Tokyo"]) resolves what map-command prints; errors throw. */
+export async function run(argv, { stdin = process.stdin, socket } = {}) {
+  const [name, ...args] = argv.map(String);
   const options = {};
   for (const flag of FLAGS[name] ?? []) {
     const index = args.indexOf(`--${flag}`);
@@ -215,48 +246,22 @@ async function main() {
   let text = args.join(" ");
   if (name === "graphics" && !text.trimStart().startsWith("{")) {
     if (!text || text === "-") {
-      text = await readText(process.stdin);
+      text = await readText(stdin);
     } else text = await readFile(text, "utf8");
   }
   // js: standard input, a .js/.mjs file (a name with spaces must exist: code can end in ".js" too), or the code itself.
   if (name === "js") {
-    if (!text || text === "-") text = await readText(process.stdin);
+    if (!text || text === "-") text = await readText(stdin);
     else if (/\.m?js$/.test(text) && (!/\s/.test(text) || (await stat(text).catch(() => null))?.isFile())) text = await readFile(text, "utf8");
   }
   // The page cannot write files: the CLI keeps the screenshot path and writes the PNG itself.
   // login flags configure the sign-in here; they are not sent to the page.
   const { file, ...command } = name === "--info" ? {} : { ...parseCommand(`${name} ${text}`), ...(name === "login" ? {} : options) };
-  let sockets = [process.env.MAP_PANE_SOCKET];
-  if (!sockets[0]) {
-    const dir = socketDir();
-    const entries = await readdir(dir);
-    const candidates = await Promise.all(entries.filter((name) => name.startsWith("command-") && name.endsWith(".sock")).map(async (name) => {
-      const path = join(dir, name);
-      const info = await stat(path).catch(() => null);
-      return info?.isSocket() ? { path, time: info.mtimeMs } : null;
-    }));
-    sockets = candidates.filter(Boolean).sort((a, b) => b.time - a.time).map((c) => c.path);
-  }
-  const send = async (path, body) => {
-    for (const socket of sockets) {
-      try {
-        return await request(socket, path, body);
-      } catch (error) {
-        if (process.env.MAP_PANE_SOCKET || !["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
-      }
-    }
-    throw Object.assign(new Error("No running map found. Start bin/map-pane --split (or --browser) first."), { noMap: true });
-  };
-  if (name === "--info") {
-    console.log(JSON.stringify(await send("/api/info"), null, 2));
-    return;
-  }
-  if (command.command === "clear") {
-    console.log(JSON.stringify((await send("/clear", {})).state, null, 2));
-    return;
-  }
+  const map = connect({ socket });
+  if (name === "--info") return map.info();
+  if (command.command === "clear") return map.clear();
   if (command.command === "login") {
-    await send("/cmd", toOp({ command: "extent" })); // Fail before the sign-in if no map is ready.
+    await map.command(toOp({ command: "extent" })); // Fail before the sign-in if no map is ready.
     if (options.arcctl) Object.assign(command, await arcctlSession({ portalUrl: options["portal-url"] || process.env.MAP_PANE_PORTAL_URL }));
     else Object.assign(command, await signIn({
       portalUrl: options["portal-url"] || process.env.MAP_PANE_PORTAL_URL || "https://www.arcgis.com",
@@ -266,21 +271,29 @@ async function main() {
   }
   // Sign-in status lives in the map page: with no map, list the built-in ids only.
   if (command.list) {
-    const reply = await send("/cmd", toOp(command)).catch((error) => {
-      if (!error.noMap && !["ENOENT", "ECONNREFUSED"].includes(error.code)) throw error;
+    return map.command(toOp(command)).catch((error) => {
+      if (!error.noMap) throw error;
       console.error("No running map: the sign-in status is unknown. Styles need login; portal basemaps need a running map.");
-      return { result: BASEMAPS };
+      return BASEMAPS;
     });
-    console.log(JSON.stringify(reply.result, null, 2));
-    return;
   }
-  let { result } = await send("/cmd", toOp(command));
+  let result = await map.command(toOp(command));
   // The bridge saves the PNG in its data folder: copy it to the file asked for.
   if (file) {
-    await copyFile(result.path, file);
+    try {
+      await copyFile(result.path, file);
+    } finally {
+      if (result?.path) await rm(result.path, { force: true }); // the bridge keeps its copy until it stops otherwise
+    }
     result = { file: resolve(file), width: result.width, height: result.height };
   }
-  console.log(JSON.stringify(result, null, 2));
+  return result;
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  if (!argv.length || argv[0] === "--help") return console.log(`Usage: bin/map-command <command>\n${HELP.replace("<GeoJSON>", "<file | - | inline JSON>").replaceAll("<JSON>", "<file | inline JSON>").replace("<code>", "<file.js | - | inline code>")}\n\nTargets the newest map. Set MAP_PANE_SOCKET to choose another map.\nbin/map-command --info prints the page URL of the map it targets.`);
+  console.log(JSON.stringify(await run(argv), null, 2));
 }
 
 if (import.meta.main) main().catch((error) => { console.error(`map-command: ${error.message}`); process.exitCode = 1; });

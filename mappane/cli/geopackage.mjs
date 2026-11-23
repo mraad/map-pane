@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { rmSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createWriteStream, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { pipeline } from "node:stream/promises";
 import { httpUrl } from "../web/commands.js";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -134,16 +135,19 @@ export async function loadGeoPackage(url, table) {
   process.once("exit", cleanup);
   try {
     const response = await fetch(httpUrl(url), { signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error(`GeoPackage download failed: HTTP ${response.status}`);
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of response.body) {
-      size += chunk.length;
-      if (size > 64 * 1024 * 1024) throw new Error("GeoPackage exceeds the 64 MiB download limit");
-      chunks.push(chunk);
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`GeoPackage download failed: HTTP ${response.status}`);
     }
     const file = join(dir, "data.gpkg");
-    await writeFile(file, Buffer.concat(chunks));
+    await pipeline(response.body, async function* (chunks) {
+      let size = 0;
+      for await (const chunk of chunks) {
+        size += chunk.length;
+        if (size > 64 * 1024 * 1024) throw new Error("GeoPackage exceeds the 64 MiB download limit");
+        yield chunk;
+      }
+    }, createWriteStream(file));
     return await readGeoPackageIsolated(file, table);
   } finally {
     await rm(dir, { recursive: true, force: true });

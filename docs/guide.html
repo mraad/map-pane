@@ -93,7 +93,7 @@ html { scroll-behavior: smooth; }
 
 <main>
 <header class="doc">
-  <div class="docid"><span>map-pane</span><span>Version 0.5.0</span><span>ArcGIS Maps SDK for JavaScript 5.2.2</span><span>Written in ASD-STE100 style</span></div>
+  <div class="docid"><span>map-pane</span><span>Version 0.6.0</span><span>ArcGIS Maps SDK for JavaScript 5.2.2</span><span>Written in ASD-STE100 style</span></div>
   <h1>map-pane <span>Manual</span></h1>
   <p class="lede">map-pane is a live web map. An agent controls the map from the terminal. You can control it from the terminal too. This manual tells you how to install, start, use and stop the map.</p>
 </header>
@@ -323,6 +323,12 @@ mappane/bin/map-command geojson https://earthquake.usgs.gov/earthquakes/feed/v1.
 cat features.geojson | mappane/bin/map-command graphics - --title Features
 mappane/bin/map-command zoom
 mappane/bin/map-command screenshot map.png</code></pre>
+<h3>Use the commands from Node</h3>
+<p>The file <code>mappane/cli/command.mjs</code> exports the commands as functions. The package name is <code>map-pane</code>.</p>
+<p>Give <code>run</code> the same words as <code>map-command</code>. It returns the JSON result. If the command fails, it throws the error.</p>
+<pre><code>import { run } from "map-pane"
+await run(["go_to", "location", "Austin, Texas"])</code></pre>
+<div class="note"><span class="label">Note</span><p>The Claude Code code-mode REPL cannot import files. See <a href="#code-mode">Claude Code code mode</a>.</p></div>
 <h3>The legend</h3>
 <ul>
   <li>The legend lists the layers that have a renderer.</li>
@@ -521,6 +527,34 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
   <li>Claude runs the CLI with its shell tool. Claude asks before each new command.</li>
   <li>To stop the prompts, allow the CLI one time in <code>/permissions</code>, for example <code>Bash(/path/to/map-pane/.agents/skills/map-pane/scripts/map-command:*)</code>.</li>
 </ul>
+<h3 id="code-mode">Claude Code code mode</h3>
+<p>In code mode, Claude writes JavaScript and runs it in the REPL tool. One script can send many map commands and read each result. This uses fewer turns than one shell call for each command.</p>
+<p>The REPL cannot import files, open sockets or use the network. The script calls <code>map-command</code> through <code>$</code>.</p>
+<ol class="steps">
+  <li><span>Put the helper below in the first script. It stays for the session.</span></li>
+  <li><span>Call <code>map</code> with the words of a command. The result is the JSON object.</span></li>
+  <li><span>Wait for each command that changes the map before you send the next. Do not send them together: the bridge gives layer IDs in order of arrival.</span></li>
+  <li><span>Use the layer ID from each result in the next commands.</span></li>
+</ol>
+<pre><code>const S = "/path/to/map-pane/.agents/skills/map-pane/scripts"
+const parse = (r) =&gt; {
+  if (r.exitCode) throw new Error(r.stdout.trim())
+  const out = r.stdout, start = out.search(/^[[{]/m) // stderr is merged: skip notes (login URL) before the JSON
+  return start &lt; 0 ? out : JSON.parse(out.slice(start))
+}
+const map = async (...argv) =&gt; parse(await $`${S}/map-command ${argv}`.nothrow())
+await map("go_to", "location", "Florence, Italy")
+const { layers } = await map("graphics", "/path/to/cities.geojson", "--title", "Cities")
+await map("zoom", layers[0].id)</code></pre>
+<ul>
+  <li><code>$</code> quotes each value as one argument. Place names, JSON and filters need no shell quotes.</li>
+  <li>The REPL joins stderr to stdout. The helper skips the notes before the JSON, for example the sign-in URL of <code>login</code>.</li>
+  <li><code>$</code> has no standard input in the REPL. Write data to a file with <code>write()</code>, then give the path to <code>graphics</code>.</li>
+  <li>Give a renderer or labels as <code>JSON.stringify(object)</code>.</li>
+  <li>Put the code for <code>js</code> in a plain string. A template string in the REPL changes <code>${...}</code> before the page gets the code.</li>
+  <li>To look at the map, run <code>map("screenshot", path)</code> and then <code>Read({ file_path: path })</code>.</li>
+</ul>
+<div class="note"><span class="label">Note</span><p>Node code can import the same commands: <code>import { run, connect } from "map-pane"</code>. The full guide, with recipes, an example and the API, is <code>docs/code-mode.md</code>.</p></div>
 <h3>Codex</h3>
 <p>The Codex <code>workspace-write</code> sandbox blocks the map socket with <code>connect EPERM</code>. Allow the socket:</p>
 <pre><code>codex exec -s workspace-write -c sandbox_workspace_write.network_access=true '$map-pane list the basemaps'</code></pre>
@@ -566,9 +600,9 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
     <tr><td><code>GET /api/info</code></td><td>CLI, launcher</td><td><code>{url, pid, socket}</code></td></tr>
     <tr><td><code>GET /events</code></td><td>page</td><td>Server-sent events: the page version, then <code>reset</code>, the log and the last view for a new page, then live commands. Ids are <code>&lt;epoch&gt;:&lt;n&gt;</code>, so a page that connects again gets only what it missed.</td></tr>
     <tr><td><code>POST /cmd {op, args}</code></td><td>CLI</td><td>Sends a command to each page (<code>save_webmap</code>: one page only). The first <code>ok</code> answer is the result. An error is the result only when each page failed. <code>503 noPage</code> when no page is open.</td></tr>
-    <tr><td><code>POST /ack</code>, <code>POST /state</code></td><td>page</td><td>The answer to a command, or a manual change, with the map state of the page.</td></tr>
+    <tr><td><code>POST /ack</code>, <code>POST /state</code></td><td>page</td><td>The answer to a command, or a manual change, with the map state of the page. After a clear, earlier commands can still answer, and the bridge discards their snapshots.</td></tr>
     <tr><td><code>POST /clear</code></td><td>CLI</td><td>Empties the log, starts a new epoch, sends <code>reset</code> to each page, deletes inline GeoJSON files.</td></tr>
-    <tr><td><code>GET/HEAD /files/&lt;uuid&gt;/&lt;name&gt;</code></td><td>page</td><td>A local file from a <code>path</code> argument. Range requests work, for GeoParquet.</td></tr>
+    <tr><td><code>GET/HEAD /files/&lt;uuid&gt;/&lt;name&gt;</code></td><td>page</td><td>A local file from a <code>path</code> argument. Range requests work for GeoParquet. HEAD sends headers without reading the file body.</td></tr>
   </tbody>
 </table></div>
 <h3>Ops</h3>
@@ -580,7 +614,7 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
     <tr><td><code>geopackage</code></td><td>as <code>graphics</code></td><td>The bridge decodes it in an isolated child process (read-only SQLite) and logs a <code>graphics</code> op.</td></tr>
     <tr><td><code>run_js</code></td><td>yes, except read-only</td><td>Page deadline 30 s (1 to 60 s). Bridge deadline 65 s. Code that no page answered leaves the log.</td></tr>
     <tr><td class="wrap"><code>go_to</code>, <code>screenshot</code>, <code>extent</code>, <code>zoom</code>, <code>save_webmap</code>, <code>get_basemap</code>, <code>list_basemaps</code></td><td>no</td><td>Read the map or move the view.</td></tr>
-    <tr><td><code>login</code></td><td>no</td><td>Carries a token. The bridge keeps the last login in memory and sends it first to each new page.</td></tr>
+    <tr><td><code>login</code></td><td>no</td><td>Carries a token. The bridge keeps the most recently dispatched successful login in memory and sends it first to each new page.</td></tr>
     <tr><td><code>reset</code></td><td>n/a</td><td>Sent by the bridge. Removes all layers and restores the start basemap.</td></tr>
   </tbody>
 </table></div>
@@ -637,7 +671,7 @@ mappane/bin/map-command save-webmap "Austin sites"</code></pre>
   <tbody>
     <tr><td>GeoJSON</td><td>WGS84 (RFC 7946). A <code>crs</code> member is an error. The page corrects polygon ring order.</td></tr>
     <tr><td>Failed layers</td><td>The page loads a layer before it adds the layer. A layer that fails does not change the map.</td></tr>
-    <tr><td>GeoPackage</td><td>Each vector table is a layer. EPSG or WKT and Z are kept. M is dropped. Raster tiles, curves and undefined coordinate systems are refused. 64 MiB and 100,000 features at most.</td></tr>
+    <tr><td>GeoPackage</td><td>Each vector table is a layer. EPSG or WKT and Z are kept. M is dropped. Raster tiles, curves and undefined coordinate systems are refused. URL downloads stream to a temporary file. 64 MiB and 100,000 features at most.</td></tr>
     <tr><td>GeoParquet</td><td>A file with no <code>crs</code> gets OGC:CRS84.</td></tr>
     <tr><td>Deadlines</td><td>15 s for each command. 60 s to add data, for <code>graphics</code> and for <code>save-webmap</code>. 30 s for <code>zoom</code> and <code>screenshot</code>. 30 s for <code>js</code> code (60 s at most). 30 s each for a GeoPackage download and conversion. 15 s for Chrome startup.</td></tr>
     <tr><td>Services</td><td>A service must allow browser CORS access.</td></tr>
@@ -696,7 +730,7 @@ claude plugin validate .                   # Claude marketplace and skill-only p
   <li>The Claude Code plugin, the Codex plugin and the Pi package have one version. Change the three versions together.</li>
 </ul>
 
-<footer>map-pane 0.5.0 · MIT license · github.com/mraad/map-pane · ArcGIS is a trademark of Esri. This project is not affiliated with Esri.</footer>
+<footer>map-pane 0.6.0 · MIT license · github.com/mraad/map-pane · ArcGIS is a trademark of Esri. This project is not affiliated with Esri.</footer>
 </main>
 </body>
 </html>

@@ -13,7 +13,7 @@ agent (skill) or shell ── bin/map-command (cli/command.mjs) ──socket─�
 
 - **Bridge** (`web/server.mjs`): one process. `bin/map-pane` starts one on port 0 when no bridge answers (detached with `--browser`, stopped by `--close`). It also listens on a Unix socket, `<tmpdir>/map-pane-<uid>/command-<pid>.sock`, mode 0600, in a folder that must be owner-only (0700; the bridge and CLI refuse another).
 - **Pages**: any number. Each reads commands from `GET /events` (SSE) and runs them one at a time.
-- **CLI** (`cli/command.mjs`): parses the ghostty-style verbs (`web/commands.js`), turns them into `{op, args}` (`toOp`), and posts them to the newest socket. `login` runs the PKCE flow in the CLI and sends the token as a `login` op; `login --arcctl` sends the session `arcctl login` saved instead.
+- **CLI** (`cli/command.mjs`): parses the ghostty-style verbs (`web/commands.js`), turns them into `{op, args}` (`toOp`), and posts them to the newest socket. `main()` only prints what the exported `run(argv)` returns; `connect()` is the socket client (used by `run`, importable as `map-pane`). Library and code-mode use: [code-mode.md](code-mode.md). `login` runs the PKCE flow in the CLI and sends the token as a `login` op; `login --arcctl` sends the session `arcctl login` saved instead.
 
 ## Bridge protocol
 
@@ -24,9 +24,9 @@ agent (skill) or shell ── bin/map-command (cli/command.mjs) ──socket─�
 | `GET /api/info` | CLI, launcher | `{url, pid, socket}` |
 | `GET /events` | page | SSE: `event: version`, then `reset` + log replay + last view for a new page, then live commands. Ids are `<epoch>:<n>:<login id>`; a reconnecting page gets the last login if its id is newer. |
 | `POST /cmd {op, args}` | CLI | Sends a command to every page, except `save_webmap`, which runs on one page only. The first `ok` ack answers. An error answers only when every connected target page failed. A page that connected later replayed a logged command and never answers it, so it holds the command until the timeout. A failed logged command leaves the log, except when a page already replayed it. `503 noPage` when no page is open at intake or after preparation. A command discarded before dispatch is never logged. |
-| `POST /ack`, `POST /state` | page | A command's answer (with the `tab` id the command carried), or a manual change, with the page's map state. |
+| `POST /ack`, `POST /state` | page | A command's answer (with the `tab` id the command carried), or a manual change, with the page's map state. After a clear, earlier commands can still answer, and their snapshots are discarded. |
 | `POST /clear` | CLI | Empties the log, takes a new epoch, sends `reset` to every page, deletes inline GeoJSON files. |
-| `GET/HEAD /files/<uuid>/<name>` | page | A local file registered by a `path` arg. Range support for GeoParquet. |
+| `GET/HEAD /files/<uuid>/<name>` | page | A local file registered by a `path` arg. Range support for GeoParquet. HEAD returns headers without reading the file body. |
 
 Stdout lines that the launcher and tests read: `bridge: <url>`, `SOCKET <path>`, `BRIDGE down <why>`.
 
@@ -36,11 +36,11 @@ Stdout lines that the launcher and tests read: `bridge: <url>`, `SOCKET <path>`,
 |---|---|---|
 | `add_graphic`, `add_layer`, `update_layer`, `remove_layer`, `reorder_layer`, `clear_graphics`, `set_basemap` | yes | `set_basemap` also takes a portal basemap item id. `add_layer` `feature` uses `Layer.fromArcGISServerUrl` (a FeatureServer root becomes a group layer). |
 | `graphics` | yes | GeoJSON (or decoded GeoPackage tables) as client-side layers (`runMapCommand` in `web/map-commands.js`). One geometry type: FeatureLayer with legend and popups. Mixed: GraphicsLayer. |
-| `geopackage` | as `graphics` | Decoded in the bridge (`cli/geopackage.mjs`, isolated child, read-only SQLite) and logged as a `graphics` op with inline tables. |
+| `geopackage` | as `graphics` | URL downloads stream to a temporary file, up to 64 MiB. The bridge decodes the file in an isolated child with read-only SQLite and logs it as a `graphics` op with inline tables. |
 | `run_js` | yes, except with `readOnly: true` | `{code, readOnly?, timeoutMs?}`. The page runs `code` as the body of an async function with `view`, `map`, `layerId` and `signal` (`ops.run_js` in `web/app.js`) and answers `{value?, console?}`. Page deadline 30 s (1 to 60 s), counted from arrival, so code that waited past it in the page's queue does not start; bridge deadline 65 s. A replay captures no console. A `run_js` that no page answered froze its page: it leaves the log, unlike other timed-out commands. A live command carries `expiresAt` (the bridge deadline); the page caps the code's deadline 2 s before it. A page that connects while a `run_js` is pending does not get it in its replay. See [run-js.md](run-js.md). |
 | `go_to`, `screenshot`, `extent`, `zoom`, `save_webmap` | no | Read the map or move the view. `go_to {location}` geocodes. Web map saves reject layers served by the temporary bridge file endpoint before creating the portal item. |
 | `get_basemap`, `list_basemaps` | no | The current basemap; the basemaps usable now (styles and the portal gallery only after `login`). |
-| `login` | no | Carries a token. Never logged, never saved; the last one is kept in memory and replayed first to each new page. |
+| `login` | no | Carries a token. The bridge keeps the most recently dispatched successful login in memory and replays it first to each new page. |
 | `reset` | n/a | Sent by the bridge. Removes all layers and restores the start basemap. |
 
 The bridge names each logged layer `L<n>` (`L<n>-<i>` for a multi-table `graphics`), so ids match on every page.

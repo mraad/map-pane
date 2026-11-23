@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import http from "node:http";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { pipeline, Readable } from "node:stream";
 import { test } from "node:test";
 import { decodeGeometry, loadGeoPackage, readGeoPackage, readGeoPackageIsolated } from "../cli/geopackage.mjs";
 import { toGraphics } from "../web/geojson.js";
@@ -97,10 +98,14 @@ test("WKB decoder rejects malformed, truncated and unsupported geometries", (t) 
   assert.equal(decodeGeometry(empty, 4326), null);
 });
 
-test("GeoPackage URL download loads a real SQLite database and reports HTTP errors", async (t) => {
+test("GeoPackage URL download loads SQLite and rejects HTTP errors and oversized bodies", async (t) => {
   const { file } = fixture(t);
   const server = http.createServer((req, res) => {
     if (req.url === "/vector.gpkg") res.end(readFileSync(file));
+    else if (req.url === "/large.gpkg") {
+      const chunk = Buffer.alloc(1024 * 1024);
+      pipeline(Readable.from(Array(65).fill(chunk)), res, () => {});
+    }
     else res.writeHead(404).end();
   });
   await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
@@ -108,6 +113,7 @@ test("GeoPackage URL download loads a real SQLite database and reports HTTP erro
   const url = `http://127.0.0.1:${server.address().port}`;
   assert.equal((await loadGeoPackage(`${url}/vector.gpkg`))[0].data.features.length, 1);
   await assert.rejects(loadGeoPackage(`${url}/missing.gpkg`), /HTTP 404/);
+  await assert.rejects(loadGeoPackage(`${url}/large.gpkg`), /64 MiB download limit/);
   await assert.rejects(loadGeoPackage("file:///tmp/private.gpkg"), /HTTP/);
 });
 
