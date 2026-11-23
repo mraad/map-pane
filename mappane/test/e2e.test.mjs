@@ -11,7 +11,7 @@ import { after, before, test } from "node:test";
 import { join } from "node:path";
 import { parseInput, toCdp } from "../pane/lib.mjs";
 import { openPage } from "../pane/pane.mjs";
-import { commandSocket, request, sendCommand, toOp } from "../cli/command.mjs";
+import { commandSocket, connect, toOp } from "../cli/command.mjs";
 
 const ROOT = join(import.meta.dirname, "..");
 let server, page, firstFrame;
@@ -98,10 +98,12 @@ test("a terminal click on the zoom-in button zooms the map in", async (t) => {
 });
 
 // The CLI's path: a parsed command becomes a bridge op over the socket. Layer results carry layerId; tests read id.
+// A function: server starts in before().
+const bridge = () => connect({ socket: commandSocket(server.pid) });
 const command = async (input) => {
-  const socket = commandSocket(server.pid);
-  if (input.command === "clear") return request(socket, "/clear", {});
-  const result = await sendCommand(socket, toOp(input));
+  const map = bridge();
+  if (input.command === "clear") return { state: await map.clear() };
+  const result = await map.command(toOp(input));
   return result?.layerId ? { ...result, id: result.layerId } : result;
 };
 
@@ -309,21 +311,20 @@ test("login registers the token with the SDK for the portal", async () => {
 });
 
 test("saving a web map refuses a bridge-served layer before contacting the portal", async () => {
-  const socket = commandSocket(server.pid);
-  await sendCommand(socket, { op: "add_layer", args: {
+  await bridge().command({ op: "add_layer", args: {
     type: "geojson", path: join(ROOT, "../examples/cities.geojson"), title: "Local cities", zoomTo: false,
   } });
   await assert.rejects(command({ command: "save-webmap", title: "Local map" }), /local bridge: Local cities/);
   // A Parquet layer has no layer.url: the check reads its data.urls, on the clone that would be saved.
-  await request(socket, "/clear", {});
-  await sendCommand(socket, { op: "add_layer", args: {
+  await bridge().clear();
+  await bridge().command({ op: "add_layer", args: {
     type: "parquet", path: join(ROOT, "../examples/cities.parquet"), title: "Local parquet", zoomTo: false,
   } });
   await assert.rejects(command({ command: "save-webmap", title: "Local map" }), /local bridge: Local parquet/);
 });
 
 test("saving a web map copies layers that have no clone() in SDK 5.2 and gets as far as the portal", { timeout: 60_000 }, async () => {
-  await request(commandSocket(server.pid), "/clear", {});
+  await bridge().clear();
   assert.deepEqual(await evaluate(`(async () => {
     const [GeoJSONLayer, MapImageLayer, GroupLayer] = await Promise.all(["GeoJSONLayer", "MapImageLayer", "GroupLayer"]
       .map((name) => $arcgis.import(\`@arcgis/core/layers/\${name}.js\`)));
@@ -342,8 +343,8 @@ test("saving a web map copies layers that have no clone() in SDK 5.2 and gets as
 });
 
 test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring order", async () => {
-  const op = (name, args = {}) => sendCommand(commandSocket(server.pid), { op: name, args });
-  await request(commandSocket(server.pid), "/clear", {}); // only this test's layers count for zoom-all
+  const op = (name, args = {}) => bridge().command({ op: name, args });
+  await bridge().clear(); // only this test's layers count for zoom-all
   const { layers: [two] } = await op("graphics", { title: "Two", data: { type: "FeatureCollection", features: [
     { type: "Feature", properties: { name: "Paris" }, geometry: { type: "Point", coordinates: [2.35, 48.86] } },
     { type: "Feature", properties: { name: "Sydney" }, geometry: { type: "Point", coordinates: [151.2, -33.87] } },
@@ -364,7 +365,7 @@ test("zoom with no layer honours filters; add_graphic polygons get ArcGIS ring o
 
 // Runs after the login test: a token is registered, so the answer must not carry it.
 test("run_js answers the value and console, fails with the code's error, stops at the deadline and hides the token", async () => {
-  const js = (code, args = {}) => sendCommand(commandSocket(server.pid), { op: "run_js", args: { code, readOnly: true, ...args } });
+  const js = (code, args = {}) => bridge().command({ op: "run_js", args: { code, readOnly: true, ...args } });
   assert.deepEqual(await js("console.log('zoom', { z: 1 }); return { layers: map.layers.length, ready: view.ready, named: /^L\\d+$/.test(layerId) }"),
     { value: { layers: await evaluate("view.map.layers.length"), ready: true, named: true }, console: ['zoom {"z":1}'] });
   assert.deepEqual(await js("view.map"), {}, "no return value, no console: an empty answer");
@@ -393,13 +394,12 @@ test("run_js answers the value and console, fails with the code's error, stops a
 });
 
 test("every example of docs/run-js.md runs, and the ones that change the map are replayed on a new page", { timeout: 90_000 }, async (t) => {
-  const socket = commandSocket(server.pid);
-  await request(socket, "/clear", {});
-  await sendCommand(socket, toOp({ command: "graphics", title: "Cities", data: JSON.parse(readFileSync(join(ROOT, "../examples/cities.geojson"), "utf8")) }));
+  await bridge().clear();
+  await bridge().command(toOp({ command: "graphics", title: "Cities", data: JSON.parse(readFileSync(join(ROOT, "../examples/cities.geojson"), "utf8")) }));
   const blocks = [...readFileSync(join(ROOT, "../docs/run-js.md"), "utf8").matchAll(/```js\n([\s\S]*?)```/g)].map((m) => m[1]);
   assert.equal(blocks.length, 7);
   const answers = [];
-  for (const code of blocks) answers.push((await sendCommand(socket, toOp({ command: "js", code, readOnly: code.startsWith("// readOnly") }))).value);
+  for (const code of blocks) answers.push((await bridge().command(toOp({ command: "js", code, readOnly: code.startsWith("// readOnly") }))).value);
   assert.equal(answers[0].cities, 20);
   assert.equal(answers[0].largest, 37);
   assert.deepEqual(answers[1].map((row) => row.name), ["Tokyo", "Delhi", "Shanghai"]);

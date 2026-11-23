@@ -1,10 +1,11 @@
 {
   "name": "map-pane",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A live web map in a terminal pane or browser, driven by Claude Code, Codex, Pi and the shell (skill and CLI)",
   "type": "module",
   "private": true,
   "keywords": ["pi-package"],
+  "exports": { ".": "./mappane/cli/command.mjs" },
   "engines": { "node": ">=24" },
   "pi": { "skills": ["./.agents/skills"] },
   "scripts": {
