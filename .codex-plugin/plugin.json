@@ -1,6 +1,6 @@
 {
   "name": "map-pane",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "description": "Drive a live web map (built on the ArcGIS Maps SDK for JavaScript) from the shell: geocode places, add GeoJSON, GeoPackage and services, style and label them, change basemaps, take screenshots. Shows the map in a Ghostty split.",
   "author": { "name": "mraad" },
   "repository": "https://github.com/mraad/map-pane",
