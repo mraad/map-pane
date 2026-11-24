@@ -134,10 +134,10 @@ async function pane() {
     if (!IS_WINDOWS) child?.kill(signal);
   };
   const { url, started } = await locked(async () => {
-    // Only now: waiting for the lock blocks the event loop, and until here a signal leaves nothing behind.
-    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, end);
     // One map per user: show a running bridge's map. Its start view stays; MAP_PANE_* apply only to a bridge started here.
     const running = await runningBridge();
+    // Only now: until here a signal leaves nothing behind, so it may end a launcher that waits for the lock or for a bridge.
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, end);
     if (running) return { url: running.url };
     // Ctrl-C in the terminal reaches the bridge too: that is an end, not a failed start.
     const started = await startBridge({ detached: false }).catch((error) => { if (!ended) throw error; });

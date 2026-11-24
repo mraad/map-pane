@@ -119,17 +119,25 @@ if (process.argv[1]?.endsWith("pane.mjs")) {
   const infoOf = (url) => fetch(`${url}api/info`).then((r) => r.json());
   const paneFiles = () => readdirSync(tmp).filter((name) => /^pane-\d+$/.test(name)).map((name) => join(tmp, name));
   const paneUrls = () => paneFiles().map((path) => readFileSync(path, "utf8").replace("?embedded=1", "")).filter(Boolean);
-  const endPanes = () => paneFiles().forEach((path) => rmSync(path));
-  let urls = [];
+  const endPanes = () => paneFiles().forEach((path) => rmSync(path, { force: true }));
+  const launched = [];
+  const start = (...args) => {
+    const launcher = run(process.execPath, [LAUNCH, ...args], { env });
+    launched.push(launcher);
+    return launcher;
+  };
   t.after(async () => {
-    for (const url of new Set([...urls, ...paneUrls()])) await infoOf(url).then(({ pid }) => process.kill(pid)).catch(() => {});
+    // Each pane stops the bridge it started; --close stops the one of --browser. A pane may still be starting: end it when it shows up.
+    const ending = setInterval(endPanes, 100);
+    await Promise.allSettled(launched);
+    clearInterval(ending);
+    await start("--close").catch(() => {});
     rmSync(tmp, { recursive: true, force: true, maxRetries: 5 });
   });
-  const start = (...args) => run(process.execPath, [LAUNCH, ...args], { env });
 
   const panes = Array.from({ length: 3 }, () => start());
   await t.waitFor(() => assert.equal(paneUrls().length, 3), { timeout: 20000 });
-  urls = paneUrls();
+  let urls = paneUrls();
   assert.equal(new Set(urls).size, 1, "one bridge for all panes");
   endPanes();
   await Promise.all(panes);

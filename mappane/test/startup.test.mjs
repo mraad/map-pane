@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import net from "node:net";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
@@ -73,6 +74,20 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) {
     assert.deepEqual(readdirSync(launcher.tmp).filter((name) => name.startsWith("map-pane-bridge")), [], "no log left");
   });
 }
+
+test("SIGINT ends a launcher that waits for a bridge that does not answer", { timeout: 20000 }, async (t) => {
+  const dir = mkdtempSync("/tmp/map-startup-test-");
+  const silent = net.createServer(() => {}).listen(join(dir, "silent.sock"));
+  t.after(() => { silent.close(); rmSync(dir, { recursive: true, force: true }); });
+  await once(silent, "listening");
+  const connected = once(silent, "connection");
+  const launcher = slowChrome(t, [], LAUNCHER, { MAP_PANE_SOCKET: join(dir, "silent.sock") });
+  await connected;
+  launcher.child.kill("SIGINT");
+  assert.deepEqual(await launcher.exit, [null, "SIGINT"]);
+  assert.equal(bridgePid(launcher.tmp), null, "no bridge was started");
+  assert.equal(launcher.chromePid(), null, "no pane was started");
+});
 
 for (const [name, toBridge] of [["the launcher", false], ["the launcher and the bridge (Ctrl-C)", true]]) test(`SIGINT to ${name} while the bridge starts leaves no bridge`, { timeout: 20000 }, async (t) => {
   const dir = mkdtempSync("/tmp/map-startup-test-");
