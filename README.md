@@ -26,7 +26,7 @@ The legend shows at the bottom right while the map has layers. It hides when the
 
 - macOS, Linux or Windows and Node.js 24.2 or later. Browser mode uses your default browser. Terminal mode needs Chrome or Chromium. No npm packages. Windows runs the browser map only: see [docs/windows.md](docs/windows.md).
 - Network access to `js.arcgis.com` and to the basemap tile servers.
-- Automatic Ghostty splits on macOS and tabs on Linux require Ghostty 1.4 or later.
+- Automatic Ghostty splits on macOS and tabs on Linux require Ghostty 1.4 or later. Start Ghostty before using `--tab` on Linux, or use `--browser`.
 
 ## Quick start
 
