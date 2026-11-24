@@ -7,7 +7,7 @@ Guidance for agents working in this repository.
 A live web map (ArcGIS Maps SDK for JavaScript 5.2.2, vanilla JS, no build step) driven by agents.
 `mappane/` is the runtime (`mappane/bin/map-pane` Kitty pane or browser, `mappane/bin/map-command` CLI, bridge `web/server.mjs`).
 The CLI is a printer over `run()`/`connect()` exported by `mappane/cli/command.mjs` (package export `map-pane`); keep CLI behavior in `run`.
-`mappane/cli/platform.mjs` (Chrome path, opener, Windows pipe name), `cli/launch.mjs` (Node launcher: `--browser`, `--close` on every platform, under one lock, `launch.lock`; bash `bin/map-pane` hands these over to it, and everything under Git Bash/MSYS). `.cmd` files in `bin/` and the skill's `scripts/` are the cmd and PowerShell entry points.
+`mappane/cli/platform.mjs` (Chrome path, opener, Windows pipe name), `cli/launch.mjs` (Node launcher: pane, `--browser`, `--close` on every platform, under one lock, `launch.lock`; bash `bin/map-pane` hands these over to it and adds `--split` and closing Chrome tabs; under Git Bash/MSYS it hands over everything). `.cmd` files in `bin/` and the skill's `scripts/` are the cmd and PowerShell entry points.
 One skill, `.agents/skills/map-pane`, serves Claude Code, Codex and Pi. Claude Code finds it through the link
 `.claude/skills/map-pane` in a clone, or the skill-only plugin `.claude-plugin/plugin.json` (marketplace `.claude-plugin/marketplace.json`).
 Codex: `.codex-plugin/plugin.json`, `.agents/plugins/marketplace.json`. Pi: `package.json` `pi.skills`.

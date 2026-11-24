@@ -9,18 +9,6 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # Windows (Git Bash, MSYS): ps and osascript are missing or differ; the Node launcher does the same job.
 case "$(uname -s)" in MINGW*|MSYS*) exec node "$DIR/cli/launch.mjs" "$@" ;; esac
 
-# Wait until the bridge that logs to $1 (pid $2) prints its URL; set URL, or report why it failed.
-wait_bridge() {
-  until URL="$(sed -n 's/^bridge: //p' "$1" | head -1)"; [ -n "$URL" ]; do
-    if grep -q '^BRIDGE down' "$1" || ! kill -0 "$2" 2>/dev/null; then
-      echo "map-pane: bridge failed:" >&2; cat "$1" >&2; return 1
-    fi
-    sleep 0.1
-  done
-}
-
-if [ "${1:-}" = "--browser" ]; then exec node "$DIR/cli/launch.mjs" --browser; fi
-
 if [ "${1:-}" = "--close" ]; then
   CLOSED="$(node "$DIR/cli/launch.mjs" --close)"
   URL="$(printf '%s' "$CLOSED" | sed -n 's/.*"closed":"\(.*\)".*/\1/p')"
@@ -68,19 +56,5 @@ end run
 APPLESCRIPT
 fi
 
-# One map per user: show the map of a running bridge (another pane's or browser's) if one answers.
-# Its start view stays; MAP_PANE_* start variables apply only to a bridge started here.
-if INFO="$(node "$DIR/cli/command.mjs" --info 2>/dev/null)"; then
-  URL="$(printf '%s' "$INFO" | sed -n 's/.*"url": "\(.*\)".*/\1/p')"
-else
-  LOG="$(mktemp -t map-pane-bridge)"
-  node "$DIR/web/server.mjs" "${PORT:-0}" >"$LOG" 2>&1 &
-  BRIDGE=$!
-  # wait: reap the bridge here so bash prints no "Terminated" job message.
-  # wait is last: it returns the kill status, and set -e would stop the trap there.
-  trap 'rm -f "$LOG"; kill "$BRIDGE" 2>/dev/null; wait "$BRIDGE" 2>/dev/null' EXIT
-  # The bridge prints its URL when it is ready, or why it could not start.
-  wait_bridge "$LOG" "$BRIDGE" || exit 1
-fi
-# embedded: the page hides its connection badge inside a pane.
-node "$DIR/pane/pane.mjs" "${URL}?embedded=1"
+# The pane and --browser: the Node launcher finds or starts the bridge, one launcher at a time.
+exec node "$DIR/cli/launch.mjs" "$@"
