@@ -76,6 +76,7 @@ test("WKB decoder handles byte order, envelopes and optional Z/M values", () => 
       view.setUint32(41, type, !little);
       ordinates.forEach((n, i) => view.setFloat64(45 + i * 8, n, !little));
       assert.deepEqual(decodeGeometry(data, 4326), { type: "Point", coordinates: expected });
+      assert.throws(() => decodeGeometry(data.subarray(0, -1), 4326));
     }
   }
 });
