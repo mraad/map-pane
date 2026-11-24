@@ -10,7 +10,7 @@ Run `scripts/map-command` and `scripts/map-pane` from this skill's folder (call 
 Run them from the user's working folder: relative file arguments (`./f.geojson`, `./map.png`) resolve there.
 Successful commands print JSON and exit 0; errors exit 1. `scripts/map-command --help` prints the syntax.
 Requirements: shell access as the same user and on the same machine as the map bridge, and Node.js 24.2+.
-Opening a split also needs macOS, Ghostty and Chrome.
+Terminal maps need Chrome or Chromium. Ghostty 1.4+ supports automatic splits on macOS and tabs on Linux.
 On Windows only the browser map works (`--browser`); there is no split.
 
 ## Agent setup
@@ -35,7 +35,7 @@ On Windows only the browser map works (`--browser`); there is no split.
 ## Open and select the map
 
 1. Run `scripts/map-command extent`. It returns the current view if a map is running.
-2. If it fails with `No running map found`, run `scripts/map-pane --split`. The launcher returns before the map loads.
+2. If it fails with `No running map found`, use `scripts/map-pane --split` on macOS or `scripts/map-pane --tab` on Linux when using Ghostty. Otherwise use `scripts/map-pane --browser`. The launcher returns before the map loads.
    If `MAP_PANE_SOCKET` is set and it fails with `ENOENT` or `ECONNREFUSED`, that map stopped.
    Tell the user, unset `MAP_PANE_SOCKET` and run `extent` again before you open a split.
    If another map answers, confirm with the user that it is the intended map before you change it.
@@ -45,7 +45,7 @@ To show the map in the browser instead (asked for, or no Ghostty), run `scripts/
 It opens the page of the running map, or starts a detached bridge first, and prints `{"url": ...}`.
 Then retry `extent` as in step 3.
 
-Do not run `scripts/map-pane` without `--split` or `--browser`: it takes over the current terminal in raw mode.
+Do not run `scripts/map-pane` without `--split`, `--tab` or `--browser`: it takes over the current terminal in raw mode.
 An extent has bounds and a spatial reference; the coordinates are not necessarily longitude/latitude.
 
 Start view, set on the launcher (for example `MAP_PANE_CENTER=51.5074,-0.1278 MAP_PANE_ZOOM=10 scripts/map-pane --split`):

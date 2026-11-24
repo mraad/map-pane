@@ -13,8 +13,12 @@ const PANE = join(import.meta.dirname, "..", "pane", "pane.mjs");
 // Start the pane with its own temp folder and wait for the first frame.
 async function startPane(t) {
   const tmp = mkdtempSync(join(tmpdir(), "pane-test-"));
-  const child = spawn("sh", ["-c", 'cat | script -q /dev/null "$0" "$1" "data:text/html,<h1>pane test</h1>"', process.execPath, PANE], {
-    env: { ...process.env, TMPDIR: tmp },
+  const command = '"$PANE_NODE" "$PANE_FILE" "data:text/html,<h1>pane test</h1>"';
+  const args = process.platform === "linux"
+    ? ["-q", "-e", "-c", command, "/dev/null"]
+    : ["-q", "/dev/null", process.execPath, PANE, "data:text/html,<h1>pane test</h1>"];
+  const child = spawn("sh", ["-c", 'cat | script "$@"', "sh", ...args], {
+    env: { ...process.env, TMPDIR: tmp, PANE_NODE: process.execPath, PANE_FILE: PANE },
   });
   t.after(() => {
     child.kill();

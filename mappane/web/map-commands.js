@@ -190,17 +190,20 @@ export async function runMapCommand(view, input) {
     ]);
     // Validate every table before changing the map.
     const items = input.layers ?? [{ data: input.data, title: input.title ?? "GeoJSON graphics", renderer: input.renderer, labels: input.labels }];
-    const layers = items.map((item) => {
+    const makeLayer = (item) => {
       const graphics = toGraphics(item.data, item.spatialReference);
-      if (new Set(graphics.map((g) => g.geometry.type)).size === 1) return featureLayer(FeatureLayer, item, graphics);
+      const type = graphics[0]?.geometry.type;
+      if (type && graphics.every((g) => g.geometry.type === type)) return featureLayer(FeatureLayer, item, graphics);
       if (item.renderer) throw new Error("A renderer needs features of one geometry type");
       if (item.labels) throw new Error("Labels need features of one geometry type");
       // A FeatureLayer holds one geometry type; mixed input stays graphics (no legend entry).
       return new GraphicsLayer({ title: item.title, graphics });
-    });
-    // The bridge names layers, so every page that replays the log has the same ids.
-    if (input.layerId) layers.forEach((layer, i) => { layer.id = layers.length > 1 ? `${input.layerId}-${i + 1}` : input.layerId; });
+    };
+    const layers = [];
     try {
+      for (const item of items) layers.push(makeLayer(item));
+      // The bridge names layers, so every page that replays the log has the same ids.
+      if (input.layerId) layers.forEach((layer, i) => { layer.id = layers.length > 1 ? `${input.layerId}-${i + 1}` : input.layerId; });
       await Promise.all(layers.map((layer) => layer.load()));
     } catch (error) {
       for (const layer of layers) layer.destroy();

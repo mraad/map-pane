@@ -53,7 +53,7 @@ export function openerFor(url, platform = process.platform) {
   return ["xdg-open", [url]];
 }
 
-/** Open url in the default browser. Resolves true if the opener started (macOS: succeeded), false if it could not. */
+/** Open url in the default browser. Report early xdg-open failures while allowing a foreground browser to stay running. */
 export function openUrl(url, platform = process.platform) {
   const [program, args] = openerFor(url, platform);
   return new Promise((done) => {
@@ -62,6 +62,12 @@ export function openUrl(url, platform = process.platform) {
     child.on("error", () => done(false));
     // macOS: `open` ends at once, and its exit code tells that a sandbox blocked it.
     if (platform === "darwin") return child.on("exit", (code) => done(code === 0));
+    if (platform === "linux") {
+      // xdg-open may wait for the browser until its window closes.
+      const timer = setTimeout(() => { child.unref(); done(true); }, 500);
+      child.once("close", (code) => { clearTimeout(timer); done(code === 0); });
+      return;
+    }
     child.on("spawn", () => {
       child.unref();
       done(true);

@@ -36,14 +36,10 @@ export function decodeGeometry(bytes, srsId) {
     const hasZ = dimensions === 1 || dimensions === 3;
     const width = 2 + (hasZ ? 1 : 0) + (dimensions >= 2 ? 1 : 0);
     const point = (allowEmpty = false) => {
-      const p = [];
-      for (let i = 0; i < width; i++) {
-        const n = data.getFloat64(offset, little);
-        offset += 8;
-        if (i < 2 || (i === 2 && hasZ)) {
-          p.push(n);
-        }
-      }
+      const x = data.getFloat64(offset, little);
+      const y = data.getFloat64(offset + 8, little);
+      const p = hasZ ? [x, y, data.getFloat64(offset + 16, little)] : [x, y];
+      offset += width * 8; // M occupies space in WKB but is omitted from GeoJSON.
       if (allowEmpty && p.every(Number.isNaN)) return [];
       if (!p.every(Number.isFinite)) throw new Error("Non-finite GeoPackage coordinate");
       return p;
@@ -51,7 +47,9 @@ export function decodeGeometry(bytes, srsId) {
     const array = (read, minimumBytes) => {
       const count = uint();
       if (count > (bytes.length - offset) / minimumBytes) throw new Error("Truncated WKB geometry");
-      return Array.from({ length: count }, () => read());
+      const items = new Array(count);
+      for (let i = 0; i < count; i++) items[i] = read();
+      return items;
     };
     if (type === 1) return { type: "Point", coordinates: point(true) };
     if (type === 2) return { type: "LineString", coordinates: array(point, width * 8) };

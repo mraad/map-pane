@@ -14,7 +14,8 @@ const LAUNCHER = join(import.meta.dirname, "../bin/map-pane");
 test("--browser starts a detached bridge once, opens its page, and --close stops only that bridge", { timeout: 60000 }, async (t) => {
   const tmp = mkdtempSync("/tmp/map-browser-test-");
   // Fake open and osascript: record the calls, touch no real browser.
-  for (const name of ["open", "osascript"]) {
+  const opener = process.platform === "darwin" ? "open" : "xdg-open";
+  for (const name of [opener, "osascript"]) {
     writeFileSync(join(tmp, name), `#!/bin/sh\necho "$@" >> "${tmp}/${name}.log"\n`, { mode: 0o700 });
   }
   const env = { ...process.env, TMPDIR: tmp, PATH: `${tmp}:${process.env.PATH}` };
@@ -32,10 +33,10 @@ test("--browser starts a detached bridge once, opens its page, and --close stops
   process.kill(pid, 0);
   assert.equal(JSON.parse((await launch("--browser")).stdout).url, first.url);
   assert.equal(JSON.parse(readFileSync(state, "utf8")).pid, pid);
-  assert.deepEqual(readFileSync(join(tmp, "open.log"), "utf8").trim().split("\n"), [first.url, first.url]);
+  assert.deepEqual(readFileSync(join(tmp, opener + ".log"), "utf8").trim().split("\n"), [first.url, first.url]);
 
   // A sandbox blocks the opener: the map runs on, and the launcher says what to open.
-  writeFileSync(join(tmp, "open"), "#!/bin/sh\nexit 1\n");
+  writeFileSync(join(tmp, opener), "#!/bin/sh\nexit 1\n");
   const blocked = await launch("--browser");
   assert.equal(JSON.parse(blocked.stdout).url, first.url);
   assert.match(blocked.stderr, /could not open a browser; open http/);

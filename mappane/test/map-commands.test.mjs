@@ -61,6 +61,22 @@ test("graphics preserve properties while assigning unique safe field names", asy
   assert.deepEqual(properties, original);
 });
 
+test("a malformed later table releases previously constructed layers", async (t) => {
+  const previous = globalThis.$arcgis;
+  t.after(() => { globalThis.$arcgis = previous; });
+  let destroyed = 0;
+  class GraphicsLayer {
+    destroy() { destroyed++; }
+  }
+  globalThis.$arcgis = { import: async () => GraphicsLayer };
+  const layers = [
+    { data: { type: "FeatureCollection", features: [] } },
+    { data: { type: "Point", coordinates: [] } },
+  ];
+  await assert.rejects(runMapCommand({}, { command: "graphics", layers }), /Coordinates/);
+  assert.equal(destroyed, 1);
+});
+
 test("save-webmap needs a sign-in, saves a basemap-only WebMap, then writes every layer's JSON in map order", async (t) => {
   const previous = globalThis.$arcgis;
   t.after(() => { globalThis.$arcgis = previous; });
