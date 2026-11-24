@@ -33,7 +33,7 @@ Use the `.cmd` name in PowerShell: it can mistake the extensionless bash script 
 |---|---|---|
 | Command channel | Unix socket, mode 0600 | Named pipe with a random name. Only you, administrators and SYSTEM can write to it |
 | Finding the bridge | Newest `command-<pid>.sock` in `<tmpdir>/map-pane-<uid>/` | Newest `command-<pid>.pipe` in `%TEMP%\map-pane-<user>\`, which names the pipe |
-| `--close` | Kills the bridge, closes Chrome tabs | Asks the bridge to stop (`POST /shutdown` on its pipe); the tab stays open |
+| `--close` | Asks the bridge to stop (`POST /shutdown` on its socket), closes Chrome tabs | Asks the bridge to stop (`POST /shutdown` on its pipe); the tab stays open |
 | Private-file checks | Owner and mode 600 | Not applied: Windows has no mode bits, and `%TEMP%` and `%USERPROFILE%` belong to you |
 | `login` | Opens the browser on macOS | Opens the browser through `rundll32` |
 | Chrome path | `/Applications/...` | `CHROME`, else Program Files, Program Files (x86) and Local AppData, then Edge |

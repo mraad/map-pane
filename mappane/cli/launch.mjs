@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-// The launcher in Node, for platforms where bin/map-pane (bash, perl, ps, osascript) does not run: Windows.
+// The launcher in Node. bin/map-pane hands --browser and --close over to it, and everything on Windows, where its
+// own tools (osascript, ps) do not run.
 //   launch.mjs --browser   open the map in the default browser; start a detached bridge if none runs
 //   launch.mjs --close     stop the bridge that --browser started
 //   launch.mjs             show the map in this terminal (Kitty graphics; for example WezTerm)
-// --split needs macOS and Ghostty. Prints the same JSON as bin/map-pane.
+// --split needs macOS and Ghostty.
 import { spawn } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connect, request } from "./command.mjs";
+import { commandSocket, connect, request, socketDir } from "./command.mjs";
 import { openUrl, ownerId } from "./platform.mjs";
 
 const SERVER = fileURLToPath(new URL("../web/server.mjs", import.meta.url));
@@ -18,6 +19,26 @@ const PANE = fileURLToPath(new URL("../pane/pane.mjs", import.meta.url));
 // Bridge started by --browser: {pid, url, log, socket} as JSON.
 const BROWSER_STATE = join(tmpdir(), `map-pane-browser-${ownerId()}`);
 const START_TIMEOUT_MS = 15_000;
+// Longer than one launcher can hold the lock.
+const LOCK_TIMEOUT_MS = 30_000;
+
+/**
+ * Run fn while no other launcher of this user does, so "is a bridge running, start one, record it" is one step.
+ * The lock is a SQLite exclusive transaction: every platform has it, and the OS drops it when the launcher dies.
+ */
+async function locked(fn) {
+  process.removeAllListeners("warning"); // older Node prints that SQLite is experimental
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(join(socketDir(), "launch.lock"), { timeout: LOCK_TIMEOUT_MS });
+  try {
+    try {
+      db.exec("BEGIN EXCLUSIVE");
+    } catch (error) {
+      throw error.errcode === 5 ? new Error("map-pane: another --browser or --close is still at work; try again") : error; // SQLITE_BUSY
+    }
+    return await fn();
+  } finally { db.close(); }
+}
 
 /** {url, pid, socket} of the running bridge (the one the CLI targets), or undefined. */
 const runningBridge = () => connect().info().catch(() => undefined);
@@ -64,32 +85,40 @@ async function startBridge({ detached }) {
 /** Ask a bridge to stop itself over its own socket or pipe; true when it answered. */
 const stopBridge = (socket) => request(socket, "/shutdown", {}).then(() => true, () => false);
 
-// shortcut: two --browser calls at the same moment can start two bridges, and --close stops the last one recorded
-// (bin/map-pane too); lock the state file when launchers run in parallel.
 async function browser() {
-  let info = await runningBridge();
-  if (!info) {
+  const info = await locked(async () => {
+    const running = await runningBridge();
+    if (running) return running;
     const { child, url, log, socket } = await startBridge({ detached: true });
     writeFileSync(BROWSER_STATE, JSON.stringify({ pid: child.pid, url, log, socket }));
-    info = { url };
-  }
+    return { url };
+  });
   // A sandbox can block opening a browser; the map still runs at the URL.
   // MAP_PANE_OPEN=0 skips the opener, as it does for login.
   if (process.env.MAP_PANE_OPEN !== "0" && !(await openUrl(info.url))) console.error(`map-pane: could not open a browser; open ${info.url} yourself`);
   console.log(JSON.stringify({ url: info.url }));
 }
 
+function readState() {
+  const text = readFileSync(BROWSER_STATE, "utf8");
+  if (text.startsWith("{")) return JSON.parse(text);
+  // bin/map-pane up to 0.6.1 wrote three lines.
+  const [pid, url, log] = text.split("\n");
+  return { pid, url, log, socket: commandSocket(pid) };
+}
+
 async function close() {
-  if (!existsSync(BROWSER_STATE)) {
-    console.error("map-pane: no map was opened with --browser");
-    process.exit(1);
-  }
-  const { url, log, socket } = JSON.parse(readFileSync(BROWSER_STATE, "utf8"));
+  if (!existsSync(BROWSER_STATE)) throw new Error("map-pane: no map was opened with --browser");
+  const { pid, url, log, socket } = readState();
   // Only our bridge answers on our pipe, so a reused pid can never be stopped by mistake.
-  if (socket) {
-    await stopBridge(socket);
-    // Wait for it to go: its pipe stops answering.
-    for (let i = 0; i < 50 && (await request(socket, "/api/info").then(() => true, () => false)); i++) await sleep(100);
+  if (socket) await stopBridge(socket);
+  // Wait for it to go. Ask its TCP port: a bridge can run without its socket, and another bridge can reuse the port.
+  // No answer by the deadline counts as running: the port may belong to another program that never answers.
+  const signal = AbortSignal.timeout(5000);
+  const runs = () => fetch(`${url}api/info`, { signal }).then((r) => r.json()).then((info) => info.pid === Number(pid), () => signal.aborted);
+  while (await runs()) {
+    if (signal.aborted) throw new Error(`map-pane: cannot confirm that the bridge at ${url} stopped; check process ${pid}`);
+    await sleep(100);
   }
   rmSync(BROWSER_STATE, { force: true });
   rmSync(log, { force: true });
@@ -118,7 +147,7 @@ async function pane() {
 async function main() {
   const flag = process.argv[2];
   if (flag === "--browser") return browser();
-  if (flag === "--close") return close();
+  if (flag === "--close") return locked(close);
   if (flag === "--split") throw new Error("--split needs macOS and Ghostty; use --browser");
   if (flag && flag !== "--pane") throw new Error(`unknown option ${flag}; use --browser, --close, or no option`);
   return pane();

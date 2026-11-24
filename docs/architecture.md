@@ -11,7 +11,7 @@ agent (skill) or shell ── bin/map-command (cli/command.mjs) ──socket─�
                                      └─ browser: bin/map-pane --browser, or any tab
 ```
 
-- **Bridge** (`web/server.mjs`): one process. `bin/map-pane` starts one on port 0 when no bridge answers (detached with `--browser`, stopped by `--close`). It also listens on a Unix socket, `<tmpdir>/map-pane-<uid>/command-<pid>.sock`, mode 0600, in a folder that must be owner-only (0700; the bridge and CLI refuse another). On Windows it listens on a named pipe, `\\.\pipe\map-pane-<random>-<pid>`, and writes the name to `%TEMP%\map-pane-<user>\command-<pid>.pipe`. The pipe's default access list replaces the mode bits: only the user, administrators and SYSTEM can write. The name is not a secret, since Windows lists pipe names.
+- **Bridge** (`web/server.mjs`): one process. `bin/map-pane` starts one on port 0 when no bridge answers (detached with `--browser`, stopped by `--close`; both hold `<tmpdir>/map-pane-<uid>/launch.lock`, so parallel calls start one bridge). It also listens on a Unix socket, `<tmpdir>/map-pane-<uid>/command-<pid>.sock`, mode 0600, in a folder that must be owner-only (0700; the bridge and CLI refuse another). On Windows it listens on a named pipe, `\\.\pipe\map-pane-<random>-<pid>`, and writes the name to `%TEMP%\map-pane-<user>\command-<pid>.pipe`. The pipe's default access list replaces the mode bits: only the user, administrators and SYSTEM can write. The name is not a secret, since Windows lists pipe names.
 - **Pages**: any number. Each reads commands from `GET /events` (SSE) and runs them one at a time.
 - **CLI** (`cli/command.mjs`): parses the ghostty-style verbs (`web/commands.js`), turns them into `{op, args}` (`toOp`), and posts them to the newest socket. `main()` only prints what the exported `run(argv)` returns; `connect()` is the socket client (used by `run`, importable as `map-pane`). Library and code-mode use: [code-mode.md](code-mode.md). `login` runs the PKCE flow in the CLI and sends the token as a `login` op; `login --arcctl` sends the session `arcctl login` saved instead.
 
@@ -25,7 +25,7 @@ agent (skill) or shell ── bin/map-command (cli/command.mjs) ──socket─�
 | `GET /events` | page | SSE: `event: version`, then `reset` + log replay + last view for a new page, then live commands. Ids are `<epoch>:<n>:<login id>`; a reconnecting page gets the last login if its id is newer. |
 | `POST /cmd {op, args}` | CLI | Sends a command to every page, except `save_webmap`, which runs on one page only. The first `ok` ack answers. An error answers only when every connected target page failed. A page that connected later replayed a logged command and never answers it, so it holds the command until the timeout. A failed logged command leaves the log, except when a page already replayed it. `503 noPage` when no page is open at intake or after preparation. A command discarded before dispatch is never logged. |
 | `POST /ack`, `POST /state` | page | A command's answer (with the `tab` id the command carried), or a manual change, with the page's map state. After a clear, earlier commands can still answer, and their snapshots are discarded. |
-| `POST /shutdown` | CLI, launcher | Stops the bridge and deletes its data folder. Socket or pipe only; TCP gets 403. Windows has no SIGTERM, so `launch.mjs --close` uses it. |
+| `POST /shutdown` | CLI, launcher | Stops the bridge and deletes its data folder. Socket or pipe only; TCP gets 403. `--close` uses it (Windows has no SIGTERM). |
 | `POST /clear` | CLI | Empties the log, takes a new epoch, sends `reset` to every page, deletes inline GeoJSON files. |
 | `GET/HEAD /files/<uuid>/<name>` | page | A local file registered by a `path` arg. Range support for GeoParquet. HEAD returns headers without reading the file body. |
 
@@ -79,7 +79,7 @@ A page with another version reloads itself, so an open page never runs old code 
 
 ## Accepted limits (`shortcut:` comments)
 
-- `--close` closes tabs only in Google Chrome (macOS). On Windows it stops the bridge; the tab stays open.
+- `--close` closes tabs only in Google Chrome (macOS, `bin/map-pane`). On Windows it stops the bridge; the tab stays open.
 - Windows: no `--split`, and the pane (Kitty graphics) is untested; a hard-killed bridge leaves a stale `command-<pid>.pipe` that the CLI deletes when its pipe is gone. The CLI does not check who owns the pipe: on a shared machine another user could reuse the name a killed bridge left.
 - The bridge serves `/events`, `/state` and `/files` to any local user (single-user machine).
 - The log only grows.
