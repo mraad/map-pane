@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -99,6 +99,59 @@ test("parallel --browser calls start one bridge, and --close leaves none", { tim
   lock.close();
   await closing;
   assert.ok(waited, "the bridge ran until the lock was free");
+  await assert.rejects(infoOf(urls[0]));
+});
+
+test("parallel panes and --browser calls share one bridge", { timeout: 60000 }, async (t) => {
+  const tmp = mkdtempSync(join(tmpdir(), "map-launch-test-"));
+  const env = { ...process.env, TMPDIR: tmp, TMP: tmp, TEMP: tmp, MAP_PANE_SOCKET: "", MAP_PANE_OPEN: "0" };
+  // Preloaded into the pane: no Chrome and no terminal. It writes its URL to a file and ends when the file is gone.
+  const preload = join(tmp, "fake-pane.mjs");
+  writeFileSync(preload, `import { existsSync, writeFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
+if (process.argv[1]?.endsWith("pane.mjs")) {
+  const file = ${JSON.stringify(join(tmp, "pane-"))} + process.pid;
+  writeFileSync(file, process.argv[2]);
+  while (existsSync(file)) await sleep(50);
+  process.exit(0);
+}`);
+  env.NODE_OPTIONS = `--import=${pathToFileURL(preload)}`;
+  const infoOf = (url) => fetch(`${url}api/info`).then((r) => r.json());
+  const paneFiles = () => readdirSync(tmp).filter((name) => /^pane-\d+$/.test(name)).map((name) => join(tmp, name));
+  const paneUrls = () => paneFiles().map((path) => readFileSync(path, "utf8").replace("?embedded=1", "")).filter(Boolean);
+  const endPanes = () => paneFiles().forEach((path) => rmSync(path, { force: true }));
+  const launched = [];
+  const start = (...args) => {
+    const launcher = run(process.execPath, [LAUNCH, ...args], { env });
+    launched.push(launcher);
+    return launcher;
+  };
+  t.after(async () => {
+    // Each pane stops the bridge it started; --close stops the one of --browser. A pane may still be starting: end it when it shows up.
+    const ending = setInterval(endPanes, 100);
+    await Promise.allSettled(launched);
+    clearInterval(ending);
+    await start("--close").catch(() => {});
+    rmSync(tmp, { recursive: true, force: true, maxRetries: 5 });
+  });
+
+  const panes = Array.from({ length: 3 }, () => start());
+  await t.waitFor(() => assert.equal(paneUrls().length, 3), { timeout: 20000 });
+  let urls = paneUrls();
+  assert.equal(new Set(urls).size, 1, "one bridge for all panes");
+  endPanes();
+  await Promise.all(panes);
+  await assert.rejects(infoOf(urls[0]), "the pane that started the bridge stopped it");
+  assert.deepEqual(readdirSync(tmp).filter((name) => name.startsWith("map-pane-bridge-")), [], "no log left");
+
+  const mixed = [start(), start("--browser"), start(), start("--browser")];
+  const opened = await Promise.all([mixed[1], mixed[3]]);
+  await t.waitFor(() => assert.equal(paneUrls().length, 2), { timeout: 20000 });
+  urls = [...opened.map(({ stdout }) => JSON.parse(stdout).url), ...paneUrls()];
+  assert.equal(new Set(urls).size, 1, "one bridge for panes and browsers");
+  endPanes();
+  await Promise.all(mixed);
+  await start("--close").catch(() => {}); // when --browser started it; else its pane stopped it
   await assert.rejects(infoOf(urls[0]));
 });
 

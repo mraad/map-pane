@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The launcher in Node. bin/map-pane hands --browser and --close over to it, and everything on Windows, where its
-// own tools (osascript, ps) do not run.
+// The launcher in Node: it finds or starts the bridge. bin/map-pane adds what needs macOS (--split, closing tabs)
+// and hands the rest over; on Windows, where its tools (osascript, ps) do not run, it hands over everything.
 //   launch.mjs --browser   open the map in the default browser; start a detached bridge if none runs
 //   launch.mjs --close     stop the bridge that --browser started
 //   launch.mjs             show the map in this terminal (Kitty graphics; for example WezTerm)
@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { commandSocket, connect, request, socketDir } from "./command.mjs";
-import { openUrl, ownerId } from "./platform.mjs";
+import { IS_WINDOWS, openUrl, ownerId } from "./platform.mjs";
 
 const SERVER = fileURLToPath(new URL("../web/server.mjs", import.meta.url));
 const PANE = fileURLToPath(new URL("../pane/pane.mjs", import.meta.url));
@@ -34,7 +34,7 @@ async function locked(fn) {
     try {
       db.exec("BEGIN EXCLUSIVE");
     } catch (error) {
-      throw error.errcode === 5 ? new Error("map-pane: another --browser or --close is still at work; try again") : error; // SQLITE_BUSY
+      throw error.errcode === 5 ? new Error("map-pane: another launcher is still at work; try again") : error; // SQLITE_BUSY
     }
     return await fn();
   } finally { db.close(); }
@@ -127,20 +127,36 @@ async function close() {
 }
 
 async function pane() {
-  const found = await runningBridge();
-  let started;
-  const url = found?.url ?? (started = await startBridge({ detached: false })).url;
-  const stop = async () => {
-    if (!started) return;
-    // The launcher's own bridge goes with the pane: ask it to clean up, else end it.
-    if (!(started.socket && (await stopBridge(started.socket)))) started.child.kill();
-    rmSync(started.log, { force: true });
+  let child, ended = false;
+  const end = (signal) => {
+    ended = true;
+    // Pass it on and wait: the pane restores the terminal. On Windows the console tells the pane, and a kill would skip that.
+    if (!IS_WINDOWS) child?.kill(signal);
   };
-  const child = spawn(process.execPath, [PANE, `${url}?embedded=1`], { stdio: "inherit" });
-  // Ctrl-C reaches the pane too (same console); wait for it to restore the terminal.
-  process.on("SIGINT", () => {});
-  const code = await new Promise((done) => child.on("exit", (status) => done(status ?? 1)));
-  await stop();
+  const { url, started } = await locked(async () => {
+    // One map per user: show a running bridge's map. Its start view stays; MAP_PANE_* apply only to a bridge started here.
+    const running = await runningBridge();
+    // Only now: until here a signal leaves nothing behind, so it may end a launcher that waits for the lock or for a bridge.
+    for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(signal, end);
+    if (running) return { url: running.url };
+    // Ctrl-C in the terminal reaches the bridge too: that is an end, not a failed start.
+    const started = await startBridge({ detached: false }).catch((error) => { if (!ended) throw error; });
+    return { url: started?.url, started };
+  });
+  let code = 0;
+  if (!ended) {
+    // embedded: the page hides its connection badge inside a pane.
+    child = spawn(process.execPath, [PANE, `${url}?embedded=1`], { stdio: "inherit" });
+    code = await new Promise((done) => child.on("exit", (status) => done(status ?? 1)));
+  }
+  if (started) {
+    const { child: bridge, socket, log } = started;
+    const gone = bridge.exitCode === null && bridge.signalCode === null && new Promise((done) => bridge.on("exit", done));
+    // The launcher's own bridge goes with the pane: ask it to clean up, else end it.
+    if (!(socket && (await stopBridge(socket)))) bridge.kill();
+    await gone;
+    rmSync(log, { force: true });
+  }
   process.exit(code);
 }
 
