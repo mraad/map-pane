@@ -12,16 +12,16 @@ All paths in this guide start at the repository folder.
 
 | Item | Requirement |
 |---|---|
-| Operating system | macOS. `--split` uses AppleScript. |
+| Operating system | macOS or Linux. Use `--split` on macOS or `--tab` on Linux (Ghostty 1.4+). |
 | Terminal | Ghostty 1.4 or later for `--split`. The pane works in any terminal with Kitty graphics and SGR pixel mouse. |
 | Node.js | 24.2 or later. No npm packages. |
-| Browser | Google Chrome, or `chrome-headless-shell`. Set `CHROME` if Chrome is not in `/Applications`. |
+| Browser | Browser mode uses your default browser. For a terminal pane, install Chrome or Chromium. Set `CHROME` for a nonstandard executable path. |
 | Network | Access to `js.arcgis.com` and the basemap tile servers |
 
 ## 2. Start the map
 
 1. Open a Ghostty terminal in the repository folder.
-2. Type `mappane/bin/map-pane --split`.
+2. On macOS, type `mappane/bin/map-pane --split`. On Linux, use `--tab`, or open a split yourself and run `mappane/bin/map-pane` inside it.
 3. On the first run, let macOS allow your terminal to control Ghostty.
 4. Wait until the map shows in the new split. This takes approximately 5 seconds.
 5. Type `mappane/bin/map-command extent`. The command prints the current view when the map is ready.
@@ -59,7 +59,7 @@ The pane restores the terminal and stops its Chrome. If the launcher started the
 A bridge that was already running continues. Ghostty closes the split.
 
 To stop a map that you opened with `--browser`, type `mappane/bin/map-pane --close`.
-The command stops the bridge that `--browser` started and closes the map tabs in Google Chrome.
+The command stops the bridge that `--browser` started. On macOS it also closes the map tabs in Google Chrome.
 Tabs in other browsers stay open and show that the connection is lost.
 If `--browser` did not start a bridge (for example, it used the bridge of a split), the command stops nothing and exits with status 1.
 
@@ -309,7 +309,7 @@ Each bridge can have many pages open (panes, browsers). All pages of one bridge 
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CHROME` | `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome` | Chrome binary. `chrome-headless-shell` also works. |
+| `CHROME` | Chrome in `/Applications` on macOS, Chrome or Chromium in `/usr/bin` on Linux | Chrome binary. `chrome-headless-shell` also works. |
 | `MAP_PANE_DPR` | `2` | Terminal pixels for each CSS pixel. Use `1` on a display that is not Retina. |
 | `MAP_PANE_BASEMAP` | `osm` | Start basemap. A legacy id only. |
 | `MAP_PANE_CENTER` | none | Start center, `latitude,longitude` |

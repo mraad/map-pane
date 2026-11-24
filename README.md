@@ -24,9 +24,9 @@ The legend shows at the bottom right while the map has layers. It hides when the
 
 ## Requirements
 
-- macOS or Windows, Node.js 24.2 or later, and Google Chrome (Edge works on Windows). No npm packages. Windows runs the browser map only: see [docs/windows.md](docs/windows.md).
+- macOS, Linux or Windows and Node.js 24.2 or later. Browser mode uses your default browser. Terminal mode needs Chrome or Chromium. No npm packages. Windows runs the browser map only: see [docs/windows.md](docs/windows.md).
 - Network access to `js.arcgis.com` and to the basemap tile servers.
-- Ghostty split: Ghostty 1.4 or later.
+- Automatic Ghostty splits on macOS and tabs on Linux require Ghostty 1.4 or later.
 
 ## Quick start
 
@@ -43,7 +43,8 @@ Or ask in plain words.
 The CLI, from the repository folder:
 
 ```sh
-mappane/bin/map-pane --split                       # open the map in a Ghostty split
+mappane/bin/map-pane --split                       # macOS Ghostty split
+mappane/bin/map-pane --tab                         # Linux Ghostty tab (1.4+)
 mappane/bin/map-pane --browser                     # or in the default browser (--close stops it)
 mappane/bin/map-command go_to location 'Paris, France'
 mappane/bin/map-command graphics examples/cities.geojson --title Cities --renderer examples/population-renderer.json

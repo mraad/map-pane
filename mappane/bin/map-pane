@@ -2,18 +2,20 @@
 # Show the map in this terminal (Kitty graphics); start a bridge in the background if none runs.
 #   bin/map-pane           run in the current terminal
 #   bin/map-pane --split   open a new Ghostty split to the right and run there
+#   bin/map-pane --tab     open a Linux Ghostty tab and run there
 #   bin/map-pane --browser open the map in the default browser; start a detached bridge if none runs
 #   bin/map-pane --close   stop the bridge that --browser started and close its Chrome tabs
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # Windows (Git Bash, MSYS): ps and osascript are missing or differ; the Node launcher does the same job.
-case "$(uname -s)" in MINGW*|MSYS*) exec node "$DIR/cli/launch.mjs" "$@" ;; esac
+OS="$(uname -s)"
+case "$OS" in MINGW*|MSYS*) exec node "$DIR/cli/launch.mjs" "$@" ;; esac
 
 if [ "${1:-}" = "--close" ]; then
   CLOSED="$(node "$DIR/cli/launch.mjs" --close)"
   URL="$(printf '%s' "$CLOSED" | sed -n 's/.*"closed":"\(.*\)".*/\1/p')"
   # shortcut: closes tabs only in Google Chrome; other browsers keep a disconnected tab.
-  if pgrep -xq "Google Chrome"; then
+  if [ "$OS" = Darwin ] && pgrep -x "Google Chrome" >/dev/null; then
     osascript -e "tell application \"Google Chrome\" to repeat with w in windows
       close (every tab of w whose URL starts with \"$URL\")
     end repeat" >/dev/null 2>&1 || true
@@ -22,14 +24,25 @@ if [ "${1:-}" = "--close" ]; then
   exit 0
 fi
 
+if [[ "${1:-}" = --tab || "${1:-}" = --split ]]; then
+  # The running Ghostty instance can have a different environment from this shell.
+  ARGS=("PATH=$PATH")
+  for VAR in CHROME MAP_PANE_SOCKET MAP_PANE_DPR MAP_PANE_BASEMAP MAP_PANE_CENTER MAP_PANE_ZOOM MAP_PANE_EXTENT TMPDIR; do
+    if [ -n "${!VAR:-}" ]; then ARGS+=("$VAR=${!VAR}"); fi
+  done
+fi
+
+if [ "${1:-}" = "--tab" ]; then
+  if [ "$OS" != Linux ]; then echo "map-pane: --tab needs Linux and Ghostty 1.4+; use --split on macOS" >&2; exit 1; fi
+  exec ghostty +new-tab -e env "${ARGS[@]}" "$DIR/bin/map-pane"
+fi
+
 if [ "${1:-}" = "--split" ]; then
+  if [ "$OS" != Darwin ]; then echo "map-pane: use --tab for a Linux Ghostty tab, or run map-pane inside an existing split" >&2; exit 1; fi
   # Type the command into a normal shell with "exec". A surface started with
   # "command" stays open after exit ("Process exited"); a shell that ends closes the split.
   # The split starts a fresh login shell, so forward this terminal's settings explicitly.
-  CMD="exec env"
-  for VAR in CHROME MAP_PANE_DPR MAP_PANE_BASEMAP MAP_PANE_CENTER MAP_PANE_ZOOM MAP_PANE_EXTENT; do
-    if [ -n "${!VAR:-}" ]; then CMD+=" $VAR=$(printf %q "${!VAR}")"; fi
-  done
+  CMD="exec env$(printf ' %q' "${ARGS[@]}")"
   # Split the terminal that launched us, not the front window. Agents run commands without a
   # controlling terminal, so take the first tty up the parent chain.
   TTY="" PID=$$

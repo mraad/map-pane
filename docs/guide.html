@@ -174,10 +174,10 @@ html { scroll-behavior: smooth; }
 <div class="table"><table>
   <thead><tr><th>Item</th><th>Requirement</th></tr></thead>
   <tbody>
-    <tr><td>Operating system</td><td>macOS. <code>--split</code> uses AppleScript.</td></tr>
+    <tr><td>Operating system</td><td>macOS or Linux. Ghostty 1.4 or later can open a split on macOS or a tab on Linux.</td></tr>
     <tr><td>Terminal</td><td>Ghostty 1.4 or later for <code>--split</code>. The pane works in each terminal that has Kitty graphics and SGR pixel mouse.</td></tr>
     <tr><td>Node.js</td><td>24.2 or later. No npm packages.</td></tr>
-    <tr><td>Browser</td><td>Google Chrome, or <code>chrome-headless-shell</code>. Set <code>CHROME</code> if Chrome is not in <code>/Applications</code>.</td></tr>
+    <tr><td>Browser</td><td>Browser mode uses your default browser. For a terminal pane, install Chrome or Chromium. Set <code>CHROME</code> for a nonstandard executable path.</td></tr>
     <tr><td>Network</td><td>Access to <code>js.arcgis.com</code> and to the basemap tile servers.</td></tr>
     <tr><td>Agent</td><td>Shell access on the same computer, as the same user that runs the map.</td></tr>
   </tbody>
@@ -217,7 +217,7 @@ pi install /path/to/map-pane</code></pre>
 <h3>Start the map in a Ghostty split</h3>
 <ol class="steps">
   <li><span>Open a Ghostty terminal in the repository folder.</span></li>
-  <li><span>Type <code>mappane/bin/map-pane --split</code>.</span></li>
+  <li><span>On macOS, type <code>mappane/bin/map-pane --split</code>. On Linux, use <code>--tab</code>, or open a split and run <code>mappane/bin/map-pane</code> inside it.</span></li>
   <li><span>On the first run, let macOS allow your terminal to control Ghostty.</span></li>
   <li><span>Wait until the map shows in the new split. This takes approximately 5 seconds.</span></li>
   <li><span>Type <code>mappane/bin/map-command extent</code>. The command prints the current view when the map is ready.</span></li>
@@ -232,7 +232,7 @@ pi install /path/to/map-pane</code></pre>
 mappane/bin/map-pane --browser # open the map in the default browser
 mappane/bin/map-pane           # run in the current terminal</code></pre>
 <div class="warn"><span class="label">Caution</span>
-<p>Do not let an agent run <code>mappane/bin/map-pane</code> without <code>--split</code> or <code>--browser</code>. The pane then takes over the current terminal in raw mode.</p></div>
+<p>Do not let an agent run <code>mappane/bin/map-pane</code> without <code>--split</code>, <code>--tab</code> or <code>--browser</code>. The pane then takes over the current terminal in raw mode.</p></div>
 <h3>How the launcher finds a bridge</h3>
 <ul>
   <li>The launcher first looks for a running bridge of your user. If one answers, the pane shows that map.</li>
@@ -280,7 +280,7 @@ mappane/bin/map-pane           # run in the current terminal</code></pre>
 </ol>
 <ul>
   <li>The command stops the bridge that <code>--browser</code> started.</li>
-  <li>The command closes the map tabs in Google Chrome. Tabs in other browsers stay open and show that the connection is lost.</li>
+  <li>On macOS, the command closes the map tabs in Google Chrome. Tabs in other browsers stay open and show that the connection is lost.</li>
   <li>If <code>--browser</code> did not start a bridge, the command stops nothing and exits with status 1: <code>no map was opened with --browser</code>.</li>
 </ul>
 
@@ -694,7 +694,7 @@ pts   // { id: "L3", title: "Cities", type: "feature", graphics: 4 }</code></pre
     <tr><td><code>MAP_PANE_EXTENT</code></td><td>the world</td><td>launcher</td><td>Start extent. Overrides center and zoom.</td></tr>
     <tr><td><code>PORT</code></td><td><code>0</code></td><td>launcher</td><td>Port of a bridge that the launcher starts. <code>0</code> is a free port.</td></tr>
     <tr><td><code>MAP_PANE_DPR</code></td><td><code>2</code></td><td>pane</td><td>Terminal pixels for each CSS pixel. Use <code>1</code> on a display that is not Retina.</td></tr>
-    <tr><td><code>CHROME</code></td><td>Google Chrome in <code>/Applications</code></td><td>pane</td><td>Chrome binary. <code>chrome-headless-shell</code> also works.</td></tr>
+    <tr><td><code>CHROME</code></td><td>Chrome in <code>/Applications</code> on macOS, Chrome or Chromium in <code>/usr/bin</code> on Linux</td><td>pane</td><td>Chrome binary. <code>chrome-headless-shell</code> also works.</td></tr>
     <tr><td><code>MAP_PANE_SOCKET</code></td><td>the newest bridge</td><td>CLI</td><td>The bridge socket that the CLI uses.</td></tr>
     <tr><td><code>MAP_PANE_PORTAL_URL</code></td><td><code>https://www.arcgis.com</code></td><td><code>login</code></td><td>The portal to sign in to.</td></tr>
     <tr><td><code>MAP_PANE_CLIENT_ID</code></td><td>none</td><td><code>login</code></td><td>OAuth client ID. Required for <code>login</code>.</td></tr>
