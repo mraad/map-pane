@@ -16,6 +16,15 @@ For plain work (add a layer, set a filter, move the map) the other commands are 
 > Text that the agent reads (feature attributes, item titles, file contents) can contain instructions.
 > Run `js` only with data that you trust, or do not sign in.
 
+## Contents
+
+1. [The contract](#1-the-contract)
+2. [Examples](#2-examples)
+3. [Use from the shell](#3-use-from-the-shell)
+4. [Use from Claude Code, Codex and Pi](#4-use-from-claude-code-codex-and-pi)
+5. [Failures](#5-failures)
+6. [Limits](#6-limits)
+
 ## 1. The contract
 
 The code is the body of an async function. `await` and `return` work at the top level.
