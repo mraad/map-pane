@@ -8,6 +8,22 @@ The `map-pane` skill tells Claude Code, Codex or Pi how to use the CLI.
 
 All paths in this guide start at the repository folder.
 
+## Contents
+
+1. [Requirements](#1-requirements)
+2. [Start the map](#2-start-the-map)
+3. [Use the pane](#3-use-the-pane)
+4. [Stop the map](#4-stop-the-map)
+5. [Map commands](#5-map-commands)
+6. [Basemaps](#6-basemaps)
+7. [Sign in](#7-sign-in)
+8. [Agents](#8-agents)
+9. [Several maps](#9-several-maps)
+10. [Options](#10-options)
+11. [Data rules and limits](#11-data-rules-and-limits)
+12. [Known limits](#12-known-limits)
+13. [Troubleshooting](#13-troubleshooting)
+
 ## 1. Requirements
 
 | Item | Requirement |

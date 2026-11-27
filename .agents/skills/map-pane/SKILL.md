@@ -1,6 +1,6 @@
 ---
 name: map-pane
-description: Open, control and close a live web map (Ghostty split or browser) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove or restyle a layer, clear the map, save a web map, take a screenshot of a running map, or run JavaScript in the map page (query features, statistics, computed renderers, popups, geometry operations).
+description: Opens, controls and closes a live web map (Ghostty split or browser) through the map-pane CLI (mappane/bin/map-command). Use when the user wants to open a map, go_to a country, state, city, ZIP code, address or latitude/longitude, read the map extent, list or switch basemaps, sign in to an ArcGIS portal, load map service, feature service, GeoJSON or GeoPackage URLs, add GeoJSON with a title, renderer or labels, zoom to layers, remove or restyle a layer, clear the map, save a web map, take a screenshot of a running map, or run JavaScript in the map page (query features, statistics, computed renderers, popups, geometry operations).
 argument-hint: "open [browser] | close [browser] | extent | basemap [list | <id>] | go_to location <place> | go_to coordinate <lat> <lon> [zoom] | login [--arcctl] [--portal-url <url>] [--client-id <id>] [--redirect-uri <uri>] | map-service <url> | feature-service <url> | geojson <url> | geopackage <url> [table] | graphics <GeoJSON> [--title <name>] [--renderer <JSON>] [--labels <JSON>] | zoom [layer-id | title] | remove <layer-id | title> | reorder <layer-id | title> <top | bottom | index> | update-layer <layer-id | title> [--title <name>] [--renderer <JSON>] [--labels <JSON>] [--filter <SQL>] [--opacity <0-1>] [--visible true|false] | screenshot <file.png> | clear | save-webmap <title> | js <file.js | - | code> [--timeout <ms>] [--read-only]"
 ---
 
@@ -184,7 +184,7 @@ await map("zoom", layers[0].id)
 
 Node scripts (Pi extensions, tests) import the same commands: `import { run, connect } from "map-pane"` (or `mappane/cli/command.mjs`).
 `run(["go_to", "location", "Tokyo"])` resolves the JSON that `map-command` prints and throws its error.
-`connect({ socket }).command({ op, args })` sends one bridge op (`docs/architecture.md`, "Ops").
+`connect({ socket }).command({ op, args })` sends one bridge op (`../../../docs/architecture.md`, "Ops").
 Full guide (helper, recipes, worked example, API reference): `../../../docs/code-mode.md`.
 
 ## Results and retries
